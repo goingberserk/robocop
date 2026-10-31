@@ -19,7 +19,7 @@ export type WorkerResponse =
       ms: number;
     };
 
-export const MODEL_ID = "onnx-community/rfdetr_nano-ONNX";
+export const MODEL_ID = "onnx-community/rfdetr_medium-ONNX";
 
 // Lowest score the worker returns; the UI filters further with its slider.
 export const MIN_SCORE = 0.2;

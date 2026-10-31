@@ -3,7 +3,7 @@
 Car and person detection on a recorded clip of the Public Square live cam (Watertown, NY).
 
 - `app/Detector.tsx` plays the clip and draws boxes on a canvas overlay.
-- `app/detector.worker.ts` runs [RF-DETR nano](https://huggingface.co/onnx-community/rfdetr_nano-ONNX) in the browser with transformers.js (WebGPU fp32, WASM q8 fallback).
+- `app/detector.worker.ts` runs [RF-DETR medium](https://huggingface.co/onnx-community/rfdetr_medium-ONNX) in the browser with transformers.js (WebGPU fp32, WASM q8 fallback).
 - The clip lives in Vercel Blob; its URL is in `lib/streams.ts`.
 
 ```bash

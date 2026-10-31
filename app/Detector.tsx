@@ -9,8 +9,8 @@ import {
 } from "@/lib/detection";
 import styles from "./Detector.module.css";
 
-// Frames are downscaled before inference; the model works at 384px anyway.
-const FRAME_WIDTH = 640;
+// Frames are downscaled before inference; the model works at 576px anyway.
+const FRAME_WIDTH = 1024;
 
 type Status =
   | { kind: "loading"; progress: number }
@@ -227,7 +227,7 @@ export default function Detector({ src }: { src: string }) {
           />
         </label>
         <div className={styles.stats}>
-          RF-DETR nano
+          RF-DETR medium
           {status.kind === "ready" && ` · ${status.device} ${status.dtype}`}
           {inferenceMs !== null && ` · ${Math.round(inferenceMs)} ms/frame`}
         </div>
