@@ -7,7 +7,7 @@
 .stage {
   position: relative;
   width: 100%;
-  aspect-ratio: 16 / 9;
+  margin: 0 auto;
   background: #000;
   border-radius: 8px;
   overflow: hidden;

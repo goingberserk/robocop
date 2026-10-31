@@ -48,7 +48,7 @@ const countInZone = (result: VisibleResult | null, zone: Point[]) =>
 const formatTime = (seconds: number) =>
   `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
 
-export default function Workspace({ stream }: { stream: Stream }) {
+export default function Workspace({ streams }: { streams: Stream[] }) {
   const [stepIndex, setStepIndex] = useState(0);
   const [footage, setFootage] = useState<string | null>(null);
   const [goal, setGoal] = useState<string | null>(null);
@@ -68,6 +68,7 @@ export default function Workspace({ stream }: { stream: Stream }) {
   const lastInZone = useRef(0);
 
   const step = STEPS[stepIndex];
+  const stream = streams.find((s) => s.id === footage);
   const drawing = step === "zone" && !zoneClosed;
   const detecting = started && status.kind === "ready";
 
@@ -139,14 +140,14 @@ export default function Workspace({ stream }: { stream: Stream }) {
     <div className={styles.root}>
       <div className={styles.viewer}>
         <Detector
-          src={footage ? stream.clipUrl : undefined}
+          src={stream?.clipUrl}
           category={category}
           active={started}
           boxZone={onlyInZone ? zone : null}
           onStatus={setStatus}
           onVisible={handleVisible}
         >
-          {!footage && (
+          {!stream && (
             <div className={styles.placeholder}>No footage selected</div>
           )}
           <div
@@ -270,17 +271,26 @@ export default function Workspace({ stream }: { stream: Stream }) {
         {step === "footage" && (
           <>
             <h2 className={styles.title}>Choose your footage</h2>
-            <button
-              type="button"
-              className={styles.option}
-              aria-pressed={footage === stream.id}
-              onClick={() => setFootage(stream.id)}
+            <select
+              className={styles.select}
+              aria-label="Footage"
+              value={footage ?? ""}
+              onChange={(e) => {
+                // A zone drawn on other footage would not fit this one.
+                setFootage(e.target.value);
+                clearZone();
+              }}
             >
-              <span className={styles.optionName}>{stream.label}</span>
-              <span className={styles.optionText}>
-                {stream.title}, {stream.location} · 5 min recording
-              </span>
-            </button>
+              <option value="" disabled>
+                Select a video
+              </option>
+              {streams.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+            {stream && <p className={styles.help}>{stream.description}</p>}
           </>
         )}
 
@@ -369,7 +379,7 @@ export default function Workspace({ stream }: { stream: Stream }) {
             <h2 className={styles.title}>Ready to start</h2>
             <p className={styles.help}>
               Count every <strong>{category}</strong> inside your zone on{" "}
-              {stream.label}.
+              {stream?.label}.
             </p>
             <button type="button" className={styles.primary} onClick={start}>
               Start detection

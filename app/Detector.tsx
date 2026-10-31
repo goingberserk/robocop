@@ -53,6 +53,8 @@ export default function Detector({
   const [result, setResult] = useState<Result | null>(null);
   const [inferenceMs, setInferenceMs] = useState<number | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
+  // The stage takes the video's shape so boxes and zones line up with it.
+  const [aspect, setAspect] = useState(16 / 9);
 
   const visible = useMemo(
     () =>
@@ -196,11 +198,22 @@ export default function Detector({
 
   return (
     <div className={styles.root}>
-      <div className={styles.stage}>
+      <div
+        className={styles.stage}
+        style={{
+          aspectRatio: aspect,
+          // Cap the height without breaking the aspect ratio.
+          width: `min(100%, calc(75vh * ${aspect}))`,
+        }}
+      >
         <video
           ref={videoRef}
           className={styles.video}
           src={src}
+          onLoadedMetadata={(e) => {
+            const { videoWidth, videoHeight } = e.currentTarget;
+            if (videoWidth && videoHeight) setAspect(videoWidth / videoHeight);
+          }}
           crossOrigin="anonymous"
           autoPlay
           muted

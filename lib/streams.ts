@@ -1,21 +1,51 @@
 export type Stream = {
   id: string;
   label: string;
-  title: string;
-  location: string;
-  youtubeId: string;
-  // Recorded with scripts/capture-clip.ts and uploaded to Vercel Blob.
+  description: string;
+  // Hosted on Vercel Blob; see README for uploading new clips.
   clipUrl: string;
+  // Set for clips recorded from a YouTube live stream.
+  youtubeId?: string;
 };
+
+const BLOB = "https://hkwsf0fpqsbgajr7.public.blob.vercel-storage.com/clips";
 
 export const streams: Stream[] = [
   {
     id: "watertown-public-square",
     label: "Auto video 1",
-    title: "Public Square",
-    location: "Watertown, NY",
+    description: "Public Square, Watertown, NY · 5:00 street cam at night",
+    clipUrl: `${BLOB}/watertown-public-square.mp4`,
     youtubeId: "Zz9hMrxl20I",
-    clipUrl:
-      "https://hkwsf0fpqsbgajr7.public.blob.vercel-storage.com/clips/watertown-public-square.mp4",
+  },
+  {
+    id: "airport-security-queue",
+    label: "Airport security queue",
+    description: "Passengers queueing at security, London · 0:31",
+    clipUrl: `${BLOB}/tl-passengers-queue-at-airport-security-london-uk.mp4`,
+  },
+  {
+    id: "airport-check-in-timelapse",
+    label: "Airport check-in time-lapse",
+    description: "Check-in hall from above · 0:35",
+    clipUrl: `${BLOB}/time-lapse-concept-of-4k-resolution.mp4`,
+  },
+  {
+    id: "aboda-1",
+    label: "ABODA video 1",
+    description: "Abandoned-object dataset · 1:13",
+    clipUrl: `${BLOB}/aboda_video1.mp4`,
+  },
+  {
+    id: "aboda-5",
+    label: "ABODA video 5",
+    description: "Abandoned-object dataset · 1:50",
+    clipUrl: `${BLOB}/aboda_video5.mp4`,
+  },
+  {
+    id: "aboda-11",
+    label: "ABODA video 11",
+    description: "Abandoned-object dataset, busy concourse · 2:30",
+    clipUrl: `${BLOB}/aboda_video11.mp4`,
   },
 ];
