@@ -1,12 +1,14 @@
 export type NotifyRequest = {
   id: string;
   category: string;
-  count: number;
   time: number;
-};
+  // Base64 JPEG of what was detected.
+  image?: string;
+} & ({ kind: "zone"; count: number } | { kind: "luggage"; alone: number });
 
 export type NotifyStatus =
   | "sent"
+  | "sent_without_image"
   | "not_configured"
   | "invalid"
   | "rate_limited"

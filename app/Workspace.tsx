@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { OTHER_CATEGORIES, STREET_CATEGORIES } from "@/lib/detection";
+import {
+  OTHER_CATEGORIES,
+  STREET_CATEGORIES,
+  type Detection,
+} from "@/lib/detection";
 import {
   type Bag,
   type BagState,
@@ -24,6 +28,11 @@ const MIN_POINTS = 3;
 // stay empty this long before the same activity can raise another event.
 const EVENT_MIN_FRAMES = 2;
 const EVENT_COOLDOWN_MS = 5000;
+const CROP_MAX_EDGE = 1024;
+// A left bag only alerts once, so it waits for the send limit instead of being
+// dropped by it.
+const LUGGAGE_SEND_ATTEMPTS = 4;
+const SEND_RETRY_MS = 5500;
 
 const BAG_COLORS: Record<BagState, string> = {
   moving: "#a0a0a0",
@@ -62,13 +71,13 @@ type ZoneEvent = {
   id: string;
   time: number;
   text: string;
-  count?: number;
   imessage?: NotifyStatus | "sending" | "off";
 };
 
 const IMESSAGE_LABELS: Record<NonNullable<ZoneEvent["imessage"]>, string> = {
   sending: "Sending iMessage…",
-  sent: "iMessage sent",
+  sent: "iMessage with photo sent",
+  sent_without_image: "iMessage sent, no photo",
   off: "",
   not_configured: "iMessage not set up",
   invalid: "iMessage failed",
@@ -77,14 +86,49 @@ const IMESSAGE_LABELS: Record<NonNullable<ZoneEvent["imessage"]>, string> = {
   failed: "iMessage failed",
 };
 
-async function notify(request: NotifyRequest): Promise<NotifyStatus> {
+const zoneBox = (zone: Point[], width: number, height: number) => ({
+  xmin: Math.min(...zone.map((p) => p.x)) * width,
+  ymin: Math.min(...zone.map((p) => p.y)) * height,
+  xmax: Math.max(...zone.map((p) => p.x)) * width,
+  ymax: Math.max(...zone.map((p) => p.y)) * height,
+});
+
+// One object gets a close-up with some surroundings; several get the whole zone.
+function cropDetection(
+  frame: HTMLCanvasElement,
+  box: Detection["box"],
+  marginRatio: number,
+) {
+  const margin =
+    marginRatio * Math.max(box.xmax - box.xmin, box.ymax - box.ymin);
+  const x = Math.max(0, box.xmin - margin);
+  const y = Math.max(0, box.ymin - margin);
+  const width = Math.min(frame.width, box.xmax + margin) - x;
+  const height = Math.min(frame.height, box.ymax + margin) - y;
+  const scale = Math.min(3, CROP_MAX_EDGE / Math.max(width, height));
+  const crop = document.createElement("canvas");
+  crop.width = Math.round(width * scale);
+  crop.height = Math.round(height * scale);
+  crop
+    .getContext("2d")!
+    .drawImage(frame, x, y, width, height, 0, 0, crop.width, crop.height);
+  return crop.toDataURL("image/jpeg", 0.85).split(",")[1];
+}
+
+async function notify(
+  request: NotifyRequest,
+  attempts = 1,
+): Promise<NotifyStatus> {
   try {
     const response = await fetch("/api/notify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(request),
     });
-    return ((await response.json()) as NotifyResponse).status;
+    const { status } = (await response.json()) as NotifyResponse;
+    if (status !== "rate_limited" || attempts <= 1) return status;
+    await new Promise((resolve) => setTimeout(resolve, SEND_RETRY_MS));
+    return notify(request, attempts - 1);
   } catch {
     return "failed";
   }
@@ -158,6 +202,12 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
   const handleVisible = useCallback(
     (result: VisibleResult) => {
       setVisible(result);
+      const send = (request: NotifyRequest, attempts?: number) =>
+        notify(request, attempts).then((imessage) =>
+          setEvents((prev) =>
+            prev.map((e) => (e.id === request.id ? { ...e, imessage } : e)),
+          ),
+        );
       if (watchingBags) {
         const tracks = tracker.update(result.detections, result.time);
         const { bags, abandoned } = luggage.update(tracks, {
@@ -173,12 +223,30 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
         setBags(bags);
         setAnnotations(annotate(bags, people));
         if (eventsEnabled.current && abandoned.length > 0) {
-          const found = abandoned.map((bag) => ({
+          const found: ZoneEvent[] = abandoned.map((bag) => ({
             id: crypto.randomUUID(),
             time: result.time,
             text: `Left luggage: ${bagName(bag)} alone for ${Math.floor(bag.alone)} s`,
+            imessage: imessageEnabled.current ? "sending" : "off",
           }));
           setEvents((prev) => [...found, ...prev]);
+          if (imessageEnabled.current) {
+            abandoned.forEach((bag, i) =>
+              send(
+                {
+                  kind: "luggage",
+                  id: found[i].id,
+                  category: bag.track.label,
+                  alone: Math.floor(bag.alone),
+                  time: result.time,
+                  image: result.frame
+                    ? cropDetection(result.frame, bag.track.box, 1)
+                    : undefined,
+                },
+                LUGGAGE_SEND_ATTEMPTS,
+              ),
+            );
+          }
         }
         return;
       }
@@ -194,17 +262,28 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
           id: crypto.randomUUID(),
           time: result.time,
           text: `Zone entered: ${category} (${count} in zone)`,
-          count,
           imessage: imessageEnabled.current ? "sending" : "off",
         };
         setEvents((prev) => [event, ...prev]);
         if (imessageEnabled.current) {
-          notify({ id: event.id, category, count, time: result.time }).then(
-            (imessage) =>
-              setEvents((prev) =>
-                prev.map((e) => (e.id === event.id ? { ...e, imessage } : e)),
-              ),
+          const inside = result.detections.filter((d) =>
+            boxInZone(d.box, zone, result.width, result.height),
           );
+          const box =
+            inside.length === 1
+              ? inside[0].box
+              : zoneBox(zone, result.width, result.height);
+          const image = result.frame
+            ? cropDetection(result.frame, box, inside.length === 1 ? 0.3 : 0)
+            : undefined;
+          send({
+            kind: "zone",
+            id: event.id,
+            category,
+            count,
+            time: result.time,
+            image,
+          });
         }
       }
       lastInZone.current = now;

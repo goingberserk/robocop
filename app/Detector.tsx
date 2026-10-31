@@ -24,7 +24,12 @@ export type Result = {
   height: number;
 };
 
-export type VisibleResult = Result & { time: number };
+export type VisibleResult = Result & {
+  time: number;
+  // The exact frame these boxes were detected on. It is reused, so read it
+  // straight away.
+  frame: HTMLCanvasElement | null;
+};
 
 // A box to draw in place of the raw detections, in result pixels.
 export type Annotation = {
@@ -58,6 +63,7 @@ export default function Detector({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const detectedFrame = useRef<HTMLCanvasElement | null>(null);
 
   const [status, setStatus] = useState<Status>({ kind: "loading", progress: 0 });
   const [threshold, setThreshold] = useState(0.35);
@@ -83,6 +89,7 @@ export default function Detector({
       ...result,
       detections: visible,
       time: videoRef.current?.currentTime ?? 0,
+      frame: detectedFrame.current,
     });
   }, [result, visible, onVisible]);
 
@@ -97,6 +104,8 @@ export default function Detector({
     let ready = false;
     let nextId = 0;
     let stopped = false;
+    let pendingFrame = document.createElement("canvas");
+    let spareFrame = document.createElement("canvas");
 
     const send = async () => {
       if (stopped || busy || !ready || video.readyState < 2) return;
@@ -109,6 +118,10 @@ export default function Detector({
           resizeWidth: FRAME_WIDTH,
           resizeHeight: height,
         });
+        spareFrame.width = FRAME_WIDTH;
+        spareFrame.height = height;
+        spareFrame.getContext("2d")!.drawImage(bitmap, 0, 0);
+        [pendingFrame, spareFrame] = [spareFrame, pendingFrame];
         const message: WorkerRequest = { type: "frame", id: nextId++, bitmap };
         worker.postMessage(message, [bitmap]);
       } catch {
@@ -135,6 +148,7 @@ export default function Detector({
           break;
         case "result":
           busy = false;
+          detectedFrame.current = pendingFrame;
           setResult(data);
           setInferenceMs(data.ms);
           if (!video.paused) send();

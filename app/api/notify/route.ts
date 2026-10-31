@@ -4,7 +4,8 @@ import type { NotifyRequest, NotifyResponse } from "@/lib/notify";
 
 // This route is public and its key is not, so it only ever sends one fixed kind
 // of text to one configured person, at a limited rate.
-const MIN_INTERVAL_MS = 30_000;
+const MIN_INTERVAL_MS = 5_000;
+const MAX_IMAGE_BYTES = 1_000_000;
 
 const CATEGORIES = new Set([...STREET_CATEGORIES, ...OTHER_CATEGORIES]);
 
@@ -23,16 +24,71 @@ let lastSentAt = 0;
 const reply = (body: NotifyResponse, status: number) =>
   Response.json(body, { status });
 
-const isValid = (body: Partial<NotifyRequest>): body is NotifyRequest =>
+const isSmallInteger = (value: unknown) =>
+  typeof value === "number" &&
+  Number.isInteger(value) &&
+  value >= 0 &&
+  value < 100_000;
+
+const hasValidKind = (body: Record<string, unknown>) =>
+  body.kind === "luggage"
+    ? isSmallInteger(body.alone)
+    : body.kind === "zone" && isSmallInteger(body.count) && body.count !== 0;
+
+const isValid = (body: Record<string, unknown>): body is NotifyRequest =>
+  hasValidKind(body) &&
   typeof body.id === "string" &&
   /^[0-9a-f-]{36}$/.test(body.id) &&
   typeof body.category === "string" &&
   CATEGORIES.has(body.category) &&
-  Number.isInteger(body.count) &&
-  body.count! > 0 &&
-  body.count! < 1000 &&
   typeof body.time === "number" &&
-  body.time >= 0;
+  body.time >= 0 &&
+  (body.image === undefined || typeof body.image === "string");
+
+// Only accept what the client is meant to send: a small JPEG.
+function decodeJpeg(image: string): Uint8Array<ArrayBuffer> | undefined {
+  const bytes = new Uint8Array(Buffer.from(image, "base64"));
+  const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  return isJpeg && bytes.length <= MAX_IMAGE_BYTES ? bytes : undefined;
+}
+
+async function sendImage(
+  photon: Photon,
+  project: string,
+  target: Conversation,
+  id: string,
+  bytes: Uint8Array<ArrayBuffer>,
+) {
+  const boundary = crypto.randomUUID();
+  const metadata = JSON.stringify({
+    contentType: "image/jpeg",
+    sizeBytes: bytes.length,
+    filename: "detection.jpg",
+  });
+  const body = new Blob([
+    `--${boundary}\r\nContent-Type: application/json\r\n\r\n${metadata}\r\n`,
+    `--${boundary}\r\nContent-Type: image/jpeg\r\n\r\n`,
+    bytes,
+    `\r\n--${boundary}--\r\n`,
+  ]);
+  const attachment = await photon.projects.uploadAttachment({
+    path: { id: project },
+    headers: {
+      "content-length": String(body.size),
+      "content-type": `multipart/related; boundary=${boundary}`,
+      "idempotency-key": `zone-event-image:${id}`,
+    },
+    body,
+  });
+  await photon.projects.sendMessage({
+    path: { id: project },
+    headers: { "idempotency-key": `zone-event-photo:${id}` },
+    body: {
+      ...target,
+      content: { type: "attachment", attachmentId: attachment.id },
+    },
+  });
+}
 
 // A shared line cannot send the first message, so the conversation comes from
 // the last text the configured person sent to it.
@@ -73,7 +129,7 @@ export async function POST(request: Request) {
     return reply({ status: "not_configured" }, 503);
   }
 
-  const body: Partial<NotifyRequest> = await request.json().catch(() => ({}));
+  const body: Record<string, unknown> = await request.json().catch(() => ({}));
   if (!isValid(body)) return reply({ status: "invalid" }, 400);
 
   const now = Date.now();
@@ -99,11 +155,27 @@ export async function POST(request: Request) {
         content: {
           type: "text",
           format: "plain",
-          text: `robocop: ${body.category} entered the zone (${body.count} in zone) at ${minutes}:${seconds} in the video.`,
+          text:
+            body.kind === "luggage"
+              ? `robocop: ${body.category} left alone for ${body.alone} s at ${minutes}:${seconds} in the video.`
+              : `robocop: ${body.category} entered the zone (${body.count} in zone) at ${minutes}:${seconds} in the video.`,
         },
       },
     });
-    return reply({ status: "sent" }, 200);
+    if (!body.image) return reply({ status: "sent_without_image" }, 200);
+    try {
+      const bytes = decodeJpeg(body.image);
+      if (!bytes) throw new Error("Invalid image.");
+      await sendImage(photon, project, conversation, body.id, bytes);
+      return reply({ status: "sent" }, 200);
+    } catch (error) {
+      console.error(
+        error instanceof ApiError
+          ? `Photon image error ${error.status} (request ${error.requestId ?? "unknown"}).`
+          : "Photon image failed.",
+      );
+      return reply({ status: "sent_without_image" }, 200);
+    }
   } catch (error) {
     lastSentAt = 0;
     console.error(
