@@ -14,6 +14,10 @@ npm install
 npm run dev     # http://localhost:3000
 ```
 
+## iMessage alerts
+
+`app/api/notify/route.ts` sends zone events through [Photon](https://photon.codes/docs/beta/get-started/imessage.md). The shared key is committed in `.env`. A shared line cannot text first, so the alert recipient has to text the assigned line once. The route allows one message every 30 seconds.
+
 ## Recording a new clip
 
 YouTube blocks datacenter IPs, so record locally and upload to Blob:

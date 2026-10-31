@@ -139,6 +139,10 @@
   border-top: 1px solid var(--border);
 }
 
+.eventText {
+  flex: 1;
+}
+
 .eventTime {
   color: var(--muted);
   font-family: var(--font-geist-mono);

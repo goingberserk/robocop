@@ -8,6 +8,7 @@ import {
   LUGGAGE_CATEGORIES,
   LuggageWatch,
 } from "@/lib/luggage";
+import type { NotifyRequest, NotifyResponse, NotifyStatus } from "@/lib/notify";
 import type { Stream } from "@/lib/streams";
 import { type Track, Tracker } from "@/lib/tracker";
 import { boxInZone, type Point } from "@/lib/watch";
@@ -57,7 +58,37 @@ const GOALS = [
 
 const LOADING: Status = { kind: "loading", progress: 0 };
 
-type ZoneEvent = { id: string; time: number; text: string };
+type ZoneEvent = {
+  id: string;
+  time: number;
+  text: string;
+  count?: number;
+  imessage?: NotifyStatus | "sending" | "off";
+};
+
+const IMESSAGE_LABELS: Record<NonNullable<ZoneEvent["imessage"]>, string> = {
+  sending: "Sending iMessage…",
+  sent: "iMessage sent",
+  off: "",
+  not_configured: "iMessage not set up",
+  invalid: "iMessage failed",
+  rate_limited: "iMessage skipped (limit)",
+  no_conversation: "Text the Photon line first",
+  failed: "iMessage failed",
+};
+
+async function notify(request: NotifyRequest): Promise<NotifyStatus> {
+  try {
+    const response = await fetch("/api/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+    return ((await response.json()) as NotifyResponse).status;
+  } catch {
+    return "failed";
+  }
+}
 
 const countInZone = (result: VisibleResult | null, zone: Point[]) =>
   result?.detections.filter((d) =>
@@ -106,7 +137,9 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
   const [onlyInZone, setOnlyInZone] = useState(true);
   const [eventsOn, setEventsOn] = useState(true);
   const [events, setEvents] = useState<ZoneEvent[]>([]);
+  const [imessageOn, setImessageOn] = useState(true);
   const eventsEnabled = useRef(true);
+  const imessageEnabled = useRef(true);
   const streak = useRef(0);
   const lastInZone = useRef(0);
   const [tracker] = useState(() => new Tracker());
@@ -157,12 +190,22 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
       if (streak.current < EVENT_MIN_FRAMES) return;
       const now = Date.now();
       if (eventsEnabled.current && now - lastInZone.current > EVENT_COOLDOWN_MS) {
-        const event = {
+        const event: ZoneEvent = {
           id: crypto.randomUUID(),
           time: result.time,
           text: `Zone entered: ${category} (${count} in zone)`,
+          count,
+          imessage: imessageEnabled.current ? "sending" : "off",
         };
         setEvents((prev) => [event, ...prev]);
+        if (imessageEnabled.current) {
+          notify({ id: event.id, category, count, time: result.time }).then(
+            (imessage) =>
+              setEvents((prev) =>
+                prev.map((e) => (e.id === event.id ? { ...e, imessage } : e)),
+              ),
+          );
+        }
       }
       lastInZone.current = now;
     },
@@ -369,7 +412,12 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
                     <span className={styles.eventTime}>
                       {formatTime(event.time)}
                     </span>
-                    {event.text}
+                    <span className={styles.eventText}>{event.text}</span>
+                    {event.imessage && (
+                      <span className={styles.eventTime}>
+                        {IMESSAGE_LABELS[event.imessage]}
+                      </span>
+                    )}
                   </li>
                 ))}
               </ol>
@@ -610,6 +658,19 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
               />
               Trigger events
             </label>
+            {eventsOn && (
+              <label className={styles.toggle}>
+                <input
+                  type="checkbox"
+                  checked={imessageOn}
+                  onChange={(e) => {
+                    imessageEnabled.current = e.target.checked;
+                    setImessageOn(e.target.checked);
+                  }}
+                />
+                Send iMessage on event
+              </label>
+            )}
             <button type="button" className={styles.secondary} onClick={stop}>
               Stop
             </button>
