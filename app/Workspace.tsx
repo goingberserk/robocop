@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   OTHER_CATEGORIES,
   STREET_CATEGORIES,
@@ -21,6 +21,13 @@ import {
 } from "@/lib/incident";
 import type { NotifyRequest, NotifyResponse, NotifyStatus } from "@/lib/notify";
 import { entrySideOf, motionOf } from "@/lib/sentence";
+import {
+  REPLY_LABELS,
+  type RepliesResponse,
+  type ReplyAckRequest,
+  type ReplyAction,
+  type ReplyCommand,
+} from "@/lib/replies";
 import type { Stream } from "@/lib/streams";
 import { type Track, Tracker } from "@/lib/tracker";
 import { boxInZone, type Point } from "@/lib/watch";
@@ -97,6 +104,19 @@ type ZoneEvent = {
   time: number;
   text: string;
   imessage?: NotifyStatus | "sending" | "off";
+  // Set by the person replying to the alert.
+  response?: ReplyAction;
+};
+
+const REPLY_POLL_MS = 3000;
+// A reply that names no incident goes to the newest event not yet closed.
+const isOpen = (event: ZoneEvent) =>
+  event.response !== "solved" && event.response !== "false_alarm";
+
+const eventsFor = ({ target }: ReplyCommand, events: ZoneEvent[]) => {
+  if (target === "all") return events.filter(isOpen);
+  if (target === "latest") return events.filter(isOpen).slice(0, 1);
+  return events.filter((e) => incidentNumber(e.id) === target);
 };
 
 const IMESSAGE_LABELS: Record<NonNullable<ZoneEvent["imessage"]>, string> = {
@@ -234,6 +254,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
   const [onlyInZone, setOnlyInZone] = useState(true);
   const [eventsOn, setEventsOn] = useState(true);
   const [events, setEvents] = useState<ZoneEvent[]>([]);
+  const eventsRef = useRef<ZoneEvent[]>([]);
   const [imessageOn, setImessageOn] = useState(true);
   const eventsEnabled = useRef(true);
   const imessageEnabled = useRef(true);
@@ -267,6 +288,62 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
     zoneName.trim() ||
     (watchingBags || watchingCrowd ? "Watched area" : "Restricted zone");
   const cameraName = stream?.label ?? "Camera";
+
+  useEffect(() => {
+    eventsRef.current = events;
+  }, [events]);
+
+  useEffect(() => {
+    if (!started) return;
+    const since = new Date(Date.now() - 2000).toISOString();
+    const handled = new Set<string>();
+    let stopped = false;
+
+    const apply = (command: ReplyCommand) => {
+      const matched = eventsFor(command, eventsRef.current);
+      const ids = new Set(matched.map((e) => e.id));
+      eventsRef.current = eventsRef.current.map((e) =>
+        ids.has(e.id) ? { ...e, response: command.action } : e,
+      );
+      setEvents((prev) =>
+        prev.map((e) =>
+          ids.has(e.id) ? { ...e, response: command.action } : e,
+        ),
+      );
+      const ack: ReplyAckRequest = {
+        replyId: command.id,
+        action: command.action,
+        incidents: matched.map((e) => incidentNumber(e.id)),
+      };
+      fetch("/api/replies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(ack),
+      }).catch(() => {});
+    };
+
+    const poll = async () => {
+      try {
+        const response = await fetch(
+          `/api/replies?since=${encodeURIComponent(since)}`,
+        );
+        const { commands } = (await response.json()) as RepliesResponse;
+        for (const command of commands) {
+          if (stopped || handled.has(command.id)) continue;
+          handled.add(command.id);
+          apply(command);
+        }
+      } catch {
+        // The next poll tries again.
+      }
+    };
+
+    const timer = setInterval(poll, REPLY_POLL_MS);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [started]);
 
   const handleVisible = useCallback(
     (result: VisibleResult) => {
@@ -653,6 +730,11 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
             <h3 className={styles.eventsTitle}>
               Events
               <span className={styles.eventsCount}>{events.length}</span>
+              {events.length > 0 && (
+                <span className={styles.eventsOpen}>
+                  {events.filter(isOpen).length} open
+                </span>
+              )}
             </h3>
             {events.length === 0 ? (
               <p className={styles.eventsEmpty}>
@@ -661,11 +743,28 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
             ) : (
               <ol className={styles.eventList}>
                 {events.map((event) => (
-                  <li key={event.id} className={styles.event}>
+                  <li
+                    key={event.id}
+                    className={styles.event}
+                    data-closed={!isOpen(event) || undefined}
+                  >
                     <span className={styles.eventTime}>
                       {formatTime(event.time)}
                     </span>
-                    <span className={styles.eventText}>{event.text}</span>
+                    <span className={styles.eventText}>
+                      <span className={styles.eventNumber}>
+                        #{incidentNumber(event.id)}
+                      </span>{" "}
+                      {event.text}
+                    </span>
+                    {event.response && (
+                      <span
+                        className={styles.eventResponse}
+                        data-response={event.response}
+                      >
+                        {REPLY_LABELS[event.response]}
+                      </span>
+                    )}
                     {event.imessage && (
                       <span
                         className={styles.eventStatus}

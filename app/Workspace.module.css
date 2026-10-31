@@ -190,6 +190,13 @@
   text-align: center;
 }
 
+.eventsOpen {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
 .eventsEmpty {
   padding: 16px;
   border: 1px dashed var(--border);
@@ -230,6 +237,32 @@
   color: var(--muted);
   font-family: var(--font-geist-mono);
   font-variant-numeric: tabular-nums;
+}
+
+.event[data-closed] .eventText {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.eventNumber {
+  color: var(--muted);
+  font-family: var(--font-geist-mono);
+  font-size: 12px;
+}
+
+.eventResponse {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.eventResponse[data-response="solved"] {
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .eventStatus {

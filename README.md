@@ -18,6 +18,8 @@ npm run dev     # http://localhost:3000
 
 `app/api/notify/route.ts` sends trespassing, left-luggage and crowded-space events through [Photon](https://photon.codes/docs/beta/get-started/imessage.md). The shared key is committed in `.env`. A shared line cannot text first, so the alert recipient has to text the assigned line once. Each alert has a text and a photo (the bag, the single object in the zone, or the whole zone when there are several), at most one alert every 5 seconds.
 
+The recipient can answer an alert: `solved`, `on it` or `false alarm`, optionally with an incident number (`solved 1234`) or `all`. While detection runs, the page polls `app/api/replies/route.ts`, updates the event log and sends a confirmation.
+
 ## Recording a new clip
 
 YouTube blocks datacenter IPs, so record locally and upload to Blob:

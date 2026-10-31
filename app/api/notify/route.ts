@@ -3,6 +3,7 @@ import { renderIncidentCard } from "@/lib/card/render";
 import { OTHER_CATEGORIES, STREET_CATEGORIES } from "@/lib/detection";
 import { formatClock, type IncidentInput } from "@/lib/incident";
 import type { NotifyRequest, NotifyResponse } from "@/lib/notify";
+import { findConversation, type Conversation } from "@/lib/photon";
 import { sentenceFor } from "@/lib/sentence";
 import { streams } from "@/lib/streams";
 
@@ -13,15 +14,6 @@ const MAX_IMAGE_BYTES = 1_000_000;
 const MAX_FRAME_BYTES = 1_500_000;
 
 const CATEGORIES = new Set([...STREET_CATEGORIES, ...OTHER_CATEGORIES]);
-
-type Conversation = { spaceId: string; senderId: string };
-
-// The client types these fields as unknown; this is their documented shape.
-type ReceivedMessage = {
-  sentBy: { kind: string; handle?: string };
-  receivedBy?: { kind: string; id: string };
-  space: { kind: string; id: string };
-};
 
 let conversation: Conversation | undefined;
 let lastSentAt = 0;
@@ -98,6 +90,8 @@ const isIncident = (value: unknown): value is IncidentInput => {
   );
 };
 
+const REPLY_HINT = 'Reply "solved", "on it" or "false alarm".';
+
 const PLURALS: Record<string, string> = {
   person: "people",
   bus: "buses",
@@ -141,7 +135,7 @@ const alertText = (body: NotifyRequest) => {
   const source = stream.clipUrl
     ? `${stream.label}, at ${minutes}:${seconds}`
     : stream.label;
-  return `${title}\n${detail}\n\nSource: ${source}`;
+  return `${title}\n${detail}\n\nSource: ${source}\n${REPLY_HINT}`;
 };
 
 const headingFor = (kind: IncidentInput["kind"]) =>
@@ -226,7 +220,7 @@ async function sendHeader(
   id: string,
   incident: IncidentInput,
 ) {
-  const facts = `${incident.camera} · ${formatClock(incident.at)} · #${incident.incident}`;
+  const facts = `${incident.camera} · ${formatClock(incident.at)} · #${incident.incident}\n${REPLY_HINT}`;
   const title = `${headingFor(incident.kind)} · ${incident.title}`;
   try {
     await sendText(photon, project, target, `zone-event:${id}`, `**${title}**\n${facts}`, "markdown");
@@ -235,37 +229,6 @@ async function sendHeader(
     console.error(`Photon rejected markdown (${error.status}); sending plain.`);
     await sendText(photon, project, target, `zone-event:${id}:plain`, `${title}\n${facts}`, "plain");
   }
-}
-
-// A shared line cannot send the first message, so the conversation comes from
-// the last text the configured person sent to it.
-async function findConversation(
-  photon: Photon,
-  project: string,
-  handle: string,
-): Promise<Conversation | undefined> {
-  const page = await photon.projects.listMessages({
-    path: { id: project },
-    query: {
-      direction: "received",
-      order: "desc",
-      pageSize: 100,
-      platform: "imessage",
-    },
-  });
-  const message = (page.items as unknown as ReceivedMessage[]).find(
-    (m) =>
-      m.sentBy.kind === "human" &&
-      m.sentBy.handle === handle &&
-      m.receivedBy?.kind === "agent" &&
-      m.space.kind === "direct",
-  );
-  return (
-    message?.receivedBy && {
-      spaceId: message.space.id,
-      senderId: message.receivedBy.id,
-    }
-  );
 }
 
 const logImageError = (error: unknown) =>
