@@ -54,4 +54,10 @@ export const streams: Stream[] = [
     description: "Crowd in an office lounge, phone footage · 0:32",
     clipUrl: `${BLOB}/img_7919.mp4`,
   },
+  {
+    id: "img-7921",
+    label: "IMG_7921",
+    description: "Hackathon room with bags on the floor, phone footage · 0:25",
+    clipUrl: `${BLOB}/img_7921.mp4`,
+  },
 ];
