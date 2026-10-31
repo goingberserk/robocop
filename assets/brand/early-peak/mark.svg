@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="RoboCop AI mark, Early Peak">
+  <rect x="6" y="6" width="108" height="108" rx="26" fill="#11151a" stroke="#2a323d" stroke-width="2"/>
+  <polyline points="18,78 38,78 48,70 58,76 70,34 80,88 90,78 102,78" fill="none" stroke="#e6edf3" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="60" y1="22" x2="60" y2="98" stroke="#ffb020" stroke-width="3" stroke-dasharray="4 5"/>
+  <circle cx="60" cy="22" r="7" fill="#ffb020"/>
+</svg>

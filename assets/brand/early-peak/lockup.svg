@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 470 120" width="470" height="120" role="img" aria-label="RoboCop, Early Warning AI">
+  <rect width="470" height="120" fill="#0a0c0f"/>
+  <g transform="translate(6 6) scale(0.9)">
+    <rect x="6" y="6" width="108" height="108" rx="26" fill="#11151a" stroke="#2a323d" stroke-width="2"/>
+    <polyline points="18,78 38,78 48,70 58,76 70,34 80,88 90,78 102,78" fill="none" stroke="#e6edf3" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="60" y1="22" x2="60" y2="98" stroke="#ffb020" stroke-width="3" stroke-dasharray="4 5"/>
+    <circle cx="60" cy="22" r="7" fill="#ffb020"/>
+  </g>
+  <text x="136" y="64" font-family="Archivo, 'Helvetica Neue', Arial, sans-serif" font-weight="800" font-size="48" fill="#e6edf3">RoboCop</text>
+  <text x="138" y="94" font-family="Archivo, 'Helvetica Neue', Arial, sans-serif" font-weight="500" font-size="16" letter-spacing="5" fill="#ffb020">EARLY WARNING AI</text>
+</svg>
