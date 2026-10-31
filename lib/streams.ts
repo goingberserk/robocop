@@ -48,4 +48,10 @@ export const streams: Stream[] = [
     description: "Abandoned-object dataset, busy concourse · 2:30",
     clipUrl: `${BLOB}/aboda_video11.mp4`,
   },
+  {
+    id: "img-7919",
+    label: "IMG_7919",
+    description: "Crowd in an office lounge, phone footage · 0:32",
+    clipUrl: `${BLOB}/img_7919.mp4`,
+  },
 ];
