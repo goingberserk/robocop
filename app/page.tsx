@@ -28,7 +28,7 @@ export default function Home() {
         </div>
       </header>
       <main className={styles.main}>
-        <Workspace streams={streams} />
+        <Workspace streams={streams.filter((s) => !s.hidden)} />
       </main>
       <footer className={styles.footer}>
         <span>
