@@ -21,6 +21,7 @@ import Detector, {
   type Status,
   type VisibleResult,
 } from "./Detector";
+import { useCamera } from "./useCamera";
 import styles from "./Workspace.module.css";
 
 const MIN_POINTS = 3;
@@ -191,6 +192,9 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
 
   const step = STEPS[stepIndex];
   const stream = streams.find((s) => s.id === footage);
+  const live = stream !== undefined && !stream.clipUrl;
+  const [cameraId, setCameraId] = useState<string | null>(null);
+  const { camera, devices } = useCamera(live, cameraId);
   const watchingBags = goal === "luggage";
   const categories = useMemo(
     () => (watchingBags ? [...items, "person"] : [category]),
@@ -336,7 +340,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
   };
 
   const canContinue =
-    (step === "footage" && footage !== null) ||
+    (step === "footage" && footage !== null && (!live || camera.kind === "on")) ||
     (step === "goal" && goal !== null) ||
     (step === "zone" && zoneClosed) ||
     (step === "object" && (!watchingBags || items.length > 0));
@@ -364,7 +368,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
     <div className={styles.root}>
       <div className={styles.viewer}>
         <Detector
-          src={stream?.clipUrl}
+          src={camera.kind === "on" ? camera.stream : stream?.clipUrl}
           categories={categories}
           active={started}
           boxZone={onlyInZone ? zone : null}
@@ -374,6 +378,9 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
         >
           {!stream && (
             <div className={styles.placeholder}>No footage selected</div>
+          )}
+          {live && camera.kind === "starting" && (
+            <div className={styles.placeholder}>Opening camera…</div>
           )}
           <div
             className={styles.layer}
@@ -542,6 +549,32 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
               ))}
             </select>
             {stream && <p className={styles.help}>{stream.description}</p>}
+            {live && devices.length > 1 && (
+              <select
+                className={styles.select}
+                aria-label="Camera"
+                value={
+                  cameraId ??
+                  (camera.kind === "on"
+                    ? camera.stream.getVideoTracks()[0]?.getSettings().deviceId
+                    : "")
+                }
+                onChange={(e) => {
+                  // Cameras differ in framing, so the zone starts over.
+                  setCameraId(e.target.value);
+                  clearZone();
+                }}
+              >
+                {devices.map((d, i) => (
+                  <option key={d.deviceId} value={d.deviceId}>
+                    {d.label || `Camera ${i + 1}`}
+                  </option>
+                ))}
+              </select>
+            )}
+            {live && camera.kind === "error" && (
+              <p className={styles.help}>{camera.message}</p>
+            )}
           </>
         )}
 

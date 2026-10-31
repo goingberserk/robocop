@@ -2,8 +2,9 @@ export type Stream = {
   id: string;
   label: string;
   description: string;
-  // Hosted on Vercel Blob; see README for uploading new clips.
-  clipUrl: string;
+  // Hosted on Vercel Blob; see README for uploading new clips. Unset for the
+  // live camera.
+  clipUrl?: string;
   // Set for clips recorded from a YouTube live stream.
   youtubeId?: string;
 };
@@ -11,6 +12,12 @@ export type Stream = {
 const BLOB = "https://hkwsf0fpqsbgajr7.public.blob.vercel-storage.com/clips";
 
 export const streams: Stream[] = [
+  {
+    id: "live-camera",
+    label: "Live camera",
+    description:
+      "This Mac's camera, or an iPhone nearby through Continuity Camera",
+  },
   {
     id: "watertown-public-square",
     label: "Auto video 1",

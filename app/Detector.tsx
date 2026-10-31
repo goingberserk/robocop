@@ -49,7 +49,8 @@ export default function Detector({
   onVisible,
   children,
 }: {
-  src?: string;
+  // A clip URL, or a live camera feed.
+  src?: string | MediaStream;
   categories: string[];
   // The model only loads once detection is started.
   active: boolean;
@@ -80,6 +81,14 @@ export default function Detector({
       ) ?? [],
     [result, categories, threshold],
   );
+
+  // MediaStream is browser-only, so test for the clip URL instead.
+  const live = src !== undefined && typeof src !== "string";
+
+  // A live feed can only be attached through srcObject, not the src attribute.
+  useEffect(() => {
+    videoRef.current!.srcObject = live ? src : null;
+  }, [live, src]);
 
   useEffect(() => onStatus(status), [status, onStatus]);
 
@@ -243,7 +252,7 @@ export default function Detector({
         <video
           ref={videoRef}
           className={styles.video}
-          src={src}
+          src={live ? undefined : src}
           onLoadedMetadata={(e) => {
             const { videoWidth, videoHeight } = e.currentTarget;
             if (videoWidth && videoHeight) setAspect(videoWidth / videoHeight);
@@ -251,9 +260,9 @@ export default function Detector({
           crossOrigin="anonymous"
           autoPlay
           muted
-          loop
+          loop={!live}
           playsInline
-          controls
+          controls={!live}
         />
         <canvas ref={canvasRef} className={styles.overlay} />
         {children}
