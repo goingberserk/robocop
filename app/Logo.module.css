@@ -1,0 +1,30 @@
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--foreground);
+}
+
+.mark {
+  flex-shrink: 0;
+}
+
+.dot {
+  fill: var(--accent);
+}
+
+.check {
+  stroke: var(--on-accent);
+}
+
+.word {
+  font-family: var(--font-nunito), system-ui, sans-serif;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 0.005em;
+  line-height: 1;
+}
+
+.tld {
+  color: var(--accent-text);
+}

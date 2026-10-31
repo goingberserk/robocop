@@ -8,8 +8,10 @@
   position: relative;
   width: 100%;
   margin: 0 auto;
-  background: #000;
-  border-radius: 8px;
+  background: #0b0e11;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
   overflow: hidden;
 }
 
