@@ -1,0 +1,9 @@
+{
+  "footnote": "Beispieldaten zum Pruefen des Layouts. Echte Clips kommen aus der Pipeline unter pipeline/.",
+  "clips": [
+    {
+      "id": "sample-demo",
+      "title": "SAMPLE"
+    }
+  ]
+}

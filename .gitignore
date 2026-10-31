@@ -1,0 +1,19 @@
+# data + media (never commit, these are GBs)
+data/
+web/clips/
+pipeline/frames/
+pipeline/out/
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# secrets
+.env
+.env.local
+
+# os
+.DS_Store
+!web/clips/.gitkeep

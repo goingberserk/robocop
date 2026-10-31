@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoboCop AI</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="bar">
+  <div class="brand">
+    <span class="dot"></span>
+    <span class="name">ROBOCOP<span class="thin">AI</span></span>
+  </div>
+  <p class="tagline">Es sieht den Vorfall, bevor jemand hinsieht.</p>
+</header>
+
+<main>
+
+  <nav class="clips" id="clipNav"></nav>
+
+  <section class="stage">
+
+    <div class="viewer">
+      <div class="screen">
+        <video id="player" playsinline preload="metadata"></video>
+        <div class="scanline"></div>
+        <div class="alert" id="alertCard" hidden>
+          <div class="alert-head">
+            <span class="pulse"></span>
+            <span class="alert-title">ALERT</span>
+            <span class="alert-score" id="alertScore"></span>
+          </div>
+          <p class="alert-reason" id="alertReason"></p>
+          <p class="alert-watch" id="alertWatch"></p>
+        </div>
+      </div>
+
+      <div class="transport">
+        <button id="playBtn" class="play">Abspielen</button>
+        <span class="clock" id="clock">00:00</span>
+        <span class="spacer"></span>
+        <span class="scene" id="sceneLabel"></span>
+      </div>
+    </div>
+
+    <aside class="panel">
+      <h2 class="panel-title">Risk Signal</h2>
+      <div class="chart-wrap">
+        <svg id="chart" viewBox="0 0 600 220" preserveAspectRatio="none" aria-label="Risikoverlauf"></svg>
+      </div>
+
+      <dl class="stats">
+        <div class="stat">
+          <dt>Score jetzt</dt>
+          <dd id="statScore">—</dd>
+        </div>
+        <div class="stat">
+          <dt>Vorlauf</dt>
+          <dd id="statLead">—</dd>
+        </div>
+        <div class="stat">
+          <dt>Alerts im Clip</dt>
+          <dd id="statAlerts">—</dd>
+        </div>
+      </dl>
+
+      <h2 class="panel-title">Log</h2>
+      <ol class="log" id="log"></ol>
+    </aside>
+
+  </section>
+
+  <p class="footnote" id="footnote"></p>
+
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

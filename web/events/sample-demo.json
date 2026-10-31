@@ -1,0 +1,236 @@
+{
+  "clip": "sample-demo",
+  "video": "clips/sample-demo.mp4",
+  "label": "BEISPIELDATEN",
+  "location": "Platzhalter, noch kein echtes Video",
+  "duration_s": 72,
+  "threshold": 60,
+  "incident_t": 47.0,
+  "lead_time_s": 7.0,
+  "timeline": [
+    {
+      "t": 0,
+      "score": 10.9,
+      "raw": 10.9,
+      "reason": "Ruhige Szene, gleichmaessiger Fussgaengerfluss am Zebrastreifen."
+    },
+    {
+      "t": 2,
+      "score": 8.8,
+      "raw": 8.8,
+      "reason": "Zwei Fahrzeuge warten regulaer an der Ampel."
+    },
+    {
+      "t": 4,
+      "score": 14.8,
+      "raw": 14.8,
+      "reason": "Ruhige Szene, gleichmaessiger Fussgaengerfluss am Zebrastreifen."
+    },
+    {
+      "t": 6,
+      "score": 7.9,
+      "raw": 7.9,
+      "reason": "Zwei Fahrzeuge warten regulaer an der Ampel."
+    },
+    {
+      "t": 8,
+      "score": 13.4,
+      "raw": 13.4,
+      "reason": "Ruhige Szene, gleichmaessiger Fussgaengerfluss am Zebrastreifen."
+    },
+    {
+      "t": 10,
+      "score": 11.4,
+      "raw": 11.4,
+      "reason": "Zwei Fahrzeuge warten regulaer an der Ampel."
+    },
+    {
+      "t": 12,
+      "score": 7.7,
+      "raw": 7.7,
+      "reason": "Ruhige Szene, gleichmaessiger Fussgaengerfluss am Zebrastreifen."
+    },
+    {
+      "t": 14,
+      "score": 13.1,
+      "raw": 13.1,
+      "reason": "Zwei Fahrzeuge warten regulaer an der Ampel."
+    },
+    {
+      "t": 16,
+      "score": 7.4,
+      "raw": 7.4,
+      "reason": "Ruhige Szene, gleichmaessiger Fussgaengerfluss am Zebrastreifen."
+    },
+    {
+      "t": 18,
+      "score": 12.2,
+      "raw": 12.2,
+      "reason": "Zwei Fahrzeuge warten regulaer an der Ampel."
+    },
+    {
+      "t": 20,
+      "score": 7.8,
+      "raw": 7.8,
+      "reason": "Ruhige Szene, gleichmaessiger Fussgaengerfluss am Zebrastreifen."
+    },
+    {
+      "t": 22,
+      "score": 8.2,
+      "raw": 8.2,
+      "reason": "Zwei Fahrzeuge warten regulaer an der Ampel."
+    },
+    {
+      "t": 24,
+      "score": 13.1,
+      "raw": 13.1,
+      "reason": "Ruhige Szene, gleichmaessiger Fussgaengerfluss am Zebrastreifen."
+    },
+    {
+      "t": 26,
+      "score": 19.8,
+      "raw": 19.8,
+      "reason": "Zwei Fahrzeuge warten regulaer an der Ampel."
+    },
+    {
+      "t": 28,
+      "score": 14.1,
+      "raw": 14.1,
+      "reason": "Ruhige Szene, gleichmaessiger Fussgaengerfluss am Zebrastreifen."
+    },
+    {
+      "t": 30,
+      "score": 19.0,
+      "raw": 19.0,
+      "reason": "Zwei Fahrzeuge warten regulaer an der Ampel."
+    },
+    {
+      "t": 32,
+      "score": 28.5,
+      "raw": 28.5,
+      "reason": "Ruhige Szene, gleichmaessiger Fussgaengerfluss am Zebrastreifen."
+    },
+    {
+      "t": 34,
+      "score": 37.9,
+      "raw": 37.9,
+      "reason": "Person betritt die Fahrbahn ausserhalb des Uebergangs."
+    },
+    {
+      "t": 36,
+      "score": 39.9,
+      "raw": 39.9,
+      "reason": "Person betritt die Fahrbahn ausserhalb des Uebergangs."
+    },
+    {
+      "t": 38,
+      "score": 45.1,
+      "raw": 45.1,
+      "reason": "Person betritt die Fahrbahn ausserhalb des Uebergangs."
+    },
+    {
+      "t": 40,
+      "score": 60.4,
+      "raw": 60.4,
+      "reason": "Fahrzeug von links beschleunigt deutlich staerker als der Umgebungsverkehr."
+    },
+    {
+      "t": 42,
+      "score": 58.4,
+      "raw": 58.4,
+      "reason": "Person betritt die Fahrbahn ausserhalb des Uebergangs."
+    },
+    {
+      "t": 44,
+      "score": 78.3,
+      "raw": 78.3,
+      "reason": "Kein Bremsvorgang erkennbar, Abstand verringert sich schnell."
+    },
+    {
+      "t": 46,
+      "score": 82.6,
+      "raw": 82.6,
+      "reason": "Aufprall, Fussgaenger zu Boden, umstehende Personen laufen hinzu."
+    },
+    {
+      "t": 48,
+      "score": 92.8,
+      "raw": 92.8,
+      "reason": "Person auf der Fahrbahn und beschleunigendes Fahrzeug auf Kollisionskurs."
+    },
+    {
+      "t": 50,
+      "score": 100,
+      "raw": 100,
+      "reason": "Kein Bremsvorgang erkennbar, Abstand verringert sich schnell."
+    },
+    {
+      "t": 52,
+      "score": 100,
+      "raw": 100,
+      "reason": "Aufprall, Fussgaenger zu Boden, umstehende Personen laufen hinzu."
+    },
+    {
+      "t": 54,
+      "score": 100,
+      "raw": 100,
+      "reason": "Person auf der Fahrbahn und beschleunigendes Fahrzeug auf Kollisionskurs."
+    },
+    {
+      "t": 56,
+      "score": 100,
+      "raw": 100,
+      "reason": "Kein Bremsvorgang erkennbar, Abstand verringert sich schnell."
+    },
+    {
+      "t": 58,
+      "score": 100,
+      "raw": 100,
+      "reason": "Aufprall, Fussgaenger zu Boden, umstehende Personen laufen hinzu."
+    },
+    {
+      "t": 60,
+      "score": 100,
+      "raw": 100,
+      "reason": "Person auf der Fahrbahn und beschleunigendes Fahrzeug auf Kollisionskurs."
+    },
+    {
+      "t": 62,
+      "score": 100,
+      "raw": 100,
+      "reason": "Kein Bremsvorgang erkennbar, Abstand verringert sich schnell."
+    },
+    {
+      "t": 64,
+      "score": 100,
+      "raw": 100,
+      "reason": "Aufprall, Fussgaenger zu Boden, umstehende Personen laufen hinzu."
+    },
+    {
+      "t": 66,
+      "score": 100,
+      "raw": 100,
+      "reason": "Person auf der Fahrbahn und beschleunigendes Fahrzeug auf Kollisionskurs."
+    },
+    {
+      "t": 68,
+      "score": 100,
+      "raw": 100,
+      "reason": "Kein Bremsvorgang erkennbar, Abstand verringert sich schnell."
+    },
+    {
+      "t": 70,
+      "score": 100,
+      "raw": 100,
+      "reason": "Aufprall, Fussgaenger zu Boden, umstehende Personen laufen hinzu."
+    }
+  ],
+  "alerts": [
+    {
+      "t": 40,
+      "score": 60.4,
+      "reason": "Person auf der Fahrbahn, Fahrzeug von links beschleunigt, kein Bremsvorgang erkennbar.",
+      "watch": "Abstand Fahrzeug zu Person in den naechsten Sekunden."
+    }
+  ]
+}
