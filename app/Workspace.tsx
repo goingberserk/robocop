@@ -53,7 +53,15 @@ const BAG_COLORS: Record<BagState, string> = {
 const OWNER_COLOR = "#3b9eff";
 
 const STEPS = ["footage", "goal", "zone", "object", "start"] as const;
-const STEP_LABELS = ["Footage", "Goal", "Area", "Rule", "Start"];
+const STEP_LABELS: Record<(typeof STEPS)[number], string> = {
+  footage: "Footage",
+  goal: "Goal",
+  zone: "Area",
+  object: "Rule",
+  start: "Start",
+};
+// Left luggage watches every bag type, so it has no rule to set.
+const LUGGAGE_STEPS = STEPS.filter((s) => s !== "object");
 
 const GOALS = [
   {
@@ -216,8 +224,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
   const [cursor, setCursor] = useState<Point | null>(null);
   const [category, setCategory] = useState("person");
   const [maxPeople, setMaxPeople] = useState(5);
-  const [items, setItems] = useState<string[]>(LUGGAGE_CATEGORIES);
-  const [abandonAfter, setAbandonAfter] = useState(5);
+  const [abandonAfter, setAbandonAfter] = useState(2);
   const [bags, setBags] = useState<Bag[]>([]);
   const [annotations, setAnnotations] = useState<Annotation[]>();
   const [started, setStarted] = useState(false);
@@ -239,19 +246,20 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
   const [tracker] = useState(() => new Tracker(BAG_TRACKING));
   const [luggage] = useState(() => new LuggageWatch());
 
-  const step = STEPS[stepIndex];
   const stream = streams.find((s) => s.id === footage);
   const live = stream !== undefined && !stream.clipUrl;
   const [cameraId, setCameraId] = useState<string | null>(null);
   const { camera, devices } = useCamera(live, cameraId);
   const watchingBags = goal === "luggage";
   const watchingCrowd = goal === "crowd";
+  const steps = watchingBags ? LUGGAGE_STEPS : STEPS;
+  const step = steps[stepIndex];
   const counted = watchingCrowd ? "person" : category;
   // Trespassing is any object at all; a crowd is more people than allowed.
   const allowed = watchingCrowd ? maxPeople : 0;
   const categories = useMemo(
-    () => (watchingBags ? [...items, "person"] : [counted]),
-    [watchingBags, items, counted],
+    () => (watchingBags ? [...LUGGAGE_CATEGORIES, "person"] : [counted]),
+    [watchingBags, counted],
   );
   const drawing = step === "zone" && !zoneClosed;
   const detecting = started && status.kind === "ready";
@@ -484,16 +492,15 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
     (step === "footage" && footage !== null && (!live || camera.kind === "on")) ||
     (step === "goal" && goal !== null) ||
     (step === "zone" && zoneClosed) ||
-    (step === "object" &&
-      (watchingCrowd ? maxPeople >= 1 : !watchingBags || items.length > 0));
+    (step === "object" && (!watchingCrowd || maxPeople >= 1));
 
   const abandonSlider = (
     <label className={styles.slider}>
       Abandoned after {abandonAfter} s alone
       <input
         type="range"
-        min={2}
-        max={60}
+        min={1}
+        max={15}
         step={1}
         value={abandonAfter}
         onChange={(e) => setAbandonAfter(Number(e.target.value))}
@@ -677,7 +684,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
 
       <aside className={styles.panel}>
         <div className={styles.progress} aria-hidden>
-          {STEPS.map((s, i) => (
+          {steps.map((s, i) => (
             <span
               key={s}
               className={styles.progressStep}
@@ -686,7 +693,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
           ))}
         </div>
         <p className={styles.stepCount}>
-          Step {stepIndex + 1} of {STEPS.length} · {STEP_LABELS[stepIndex]}
+          Step {stepIndex + 1} of {steps.length} · {STEP_LABELS[step]}
         </p>
 
         {step === "footage" && (
@@ -810,32 +817,6 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
           </>
         )}
 
-        {step === "object" && watchingBags && (
-          <>
-            <h2 className={styles.title}>What counts as luggage?</h2>
-            <p className={styles.help}>
-              Only these are tracked inside your area. People anywhere in view
-              count as owners.
-            </p>
-            {LUGGAGE_CATEGORIES.map((c) => (
-              <label key={c} className={styles.toggle}>
-                <input
-                  type="checkbox"
-                  checked={items.includes(c)}
-                  onChange={(e) =>
-                    setItems((prev) =>
-                      e.target.checked
-                        ? [...prev, c]
-                        : prev.filter((item) => item !== c),
-                    )
-                  }
-                />
-                {c}
-              </label>
-            ))}
-          </>
-        )}
-
         {step === "object" && watchingCrowd && (
           <>
             <h2 className={styles.title}>How many people are allowed?</h2>
@@ -858,7 +839,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
           </>
         )}
 
-        {step === "object" && !watchingBags && !watchingCrowd && (
+        {step === "object" && !watchingCrowd && (
           <>
             <h2 className={styles.title}>What may not enter the area?</h2>
             <select
@@ -891,7 +872,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
             <p className={styles.help}>
               {watchingBags ? (
                 <>
-                  Flag any <strong>{items.join(", ")}</strong> left in your
+                  Flag any <strong>{LUGGAGE_CATEGORIES.join(", ")}</strong> left in your
                   area without its owner on {stream?.label}.
                 </>
               ) : watchingCrowd ? (
@@ -938,7 +919,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
             <p className={styles.help}>
               {watchingBags ? (
                 <>
-                  Watching <strong>{items.join(", ")}</strong> in your area.
+                  Watching <strong>{LUGGAGE_CATEGORIES.join(", ")}</strong> in your area.
                   Green is with its owner (blue), amber is alone, red is
                   abandoned.
                 </>
