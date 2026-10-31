@@ -59,6 +59,12 @@ const GOALS = [
     available: true,
   },
   {
+    id: "crowd",
+    label: "Crowded space",
+    description: "More people than you allow are in an area you mark.",
+    available: true,
+  },
+  {
     id: "theft",
     label: "Theft",
     description: "An item is taken from a person or a place.",
@@ -171,6 +177,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
   const [zoneClosed, setZoneClosed] = useState(false);
   const [cursor, setCursor] = useState<Point | null>(null);
   const [category, setCategory] = useState("person");
+  const [maxPeople, setMaxPeople] = useState(5);
   const [items, setItems] = useState<string[]>(LUGGAGE_CATEGORIES);
   const [abandonAfter, setAbandonAfter] = useState(5);
   const [bags, setBags] = useState<Bag[]>([]);
@@ -196,9 +203,13 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
   const [cameraId, setCameraId] = useState<string | null>(null);
   const { camera, devices } = useCamera(live, cameraId);
   const watchingBags = goal === "luggage";
+  const watchingCrowd = goal === "crowd";
+  const counted = watchingCrowd ? "person" : category;
+  // Trespassing is any object at all; a crowd is more people than allowed.
+  const allowed = watchingCrowd ? maxPeople : 0;
   const categories = useMemo(
-    () => (watchingBags ? [...items, "person"] : [category]),
-    [watchingBags, items, category],
+    () => (watchingBags ? [...items, "person"] : [counted]),
+    [watchingBags, items, counted],
   );
   const drawing = step === "zone" && !zoneClosed;
   const detecting = started && status.kind === "ready";
@@ -258,14 +269,16 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
       const count = countInZone(result, zone);
       setPeak((prev) => Math.max(prev, count));
 
-      streak.current = count > 0 ? streak.current + 1 : 0;
+      streak.current = count > allowed ? streak.current + 1 : 0;
       if (streak.current < EVENT_MIN_FRAMES) return;
       const now = Date.now();
       if (eventsEnabled.current && now - lastInZone.current > EVENT_COOLDOWN_MS) {
         const event: ZoneEvent = {
           id: crypto.randomUUID(),
           time: result.time,
-          text: `Zone entered: ${category} (${count} in zone)`,
+          text: watchingCrowd
+            ? `Crowded: ${count} people in zone (limit ${allowed})`
+            : `Zone entered: ${counted} (${count} in zone)`,
           imessage: imessageEnabled.current ? "sending" : "off",
         };
         setEvents((prev) => [event, ...prev]);
@@ -280,25 +293,38 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
           const image = result.frame
             ? cropDetection(result.frame, box, inside.length === 1 ? 0.3 : 0)
             : undefined;
-          send({
-            kind: "zone",
+          const details = {
             id: event.id,
-            category,
+            category: counted,
             count,
             time: result.time,
             image,
-          });
+          };
+          send(
+            watchingCrowd
+              ? { ...details, kind: "crowd", limit: allowed }
+              : { ...details, kind: "zone" },
+          );
         }
       }
       lastInZone.current = now;
     },
-    [zone, watchingBags, tracker, luggage, abandonAfter, category],
+    [
+      zone,
+      watchingBags,
+      watchingCrowd,
+      tracker,
+      luggage,
+      abandonAfter,
+      counted,
+      allowed,
+    ],
   );
 
   const inZone = useMemo(() => countInZone(visible, zone), [visible, zone]);
   const bagCount = (state: BagState) =>
     bags.filter((bag) => bag.state === state).length;
-  const alert = watchingBags ? bagCount("abandoned") > 0 : inZone > 0;
+  const alert = watchingBags ? bagCount("abandoned") > 0 : inZone > allowed;
 
   const pointFrom = (e: React.PointerEvent<HTMLDivElement>): Point => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -343,7 +369,8 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
     (step === "footage" && footage !== null && (!live || camera.kind === "on")) ||
     (step === "goal" && goal !== null) ||
     (step === "zone" && zoneClosed) ||
-    (step === "object" && (!watchingBags || items.length > 0));
+    (step === "object" &&
+      (watchingCrowd ? maxPeople >= 1 : !watchingBags || items.length > 0));
 
   const abandonSlider = (
     <label className={styles.slider}>
@@ -469,15 +496,20 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
 
         {detecting && !watchingBags && (
           <div className={styles.counts}>
-            <div className={styles.count} data-alert={inZone > 0 || undefined}>
-              <span className={styles.countValue}>{inZone}</span>
-              <span className={styles.countLabel}>{category} in zone now</span>
+            <div className={styles.count} data-alert={alert || undefined}>
+              <span className={styles.countValue}>
+                {inZone}
+                {watchingCrowd && ` / ${allowed}`}
+              </span>
+              <span className={styles.countLabel}>
+                {watchingCrowd ? "People in zone / limit" : `${counted} in zone now`}
+              </span>
             </div>
             <div className={styles.count}>
               <span className={styles.countValue}>
                 {visible?.detections.length ?? 0}
               </span>
-              <span className={styles.countLabel}>{category} in view now</span>
+              <span className={styles.countLabel}>{counted} in view now</span>
             </div>
             <div className={styles.count}>
               <span className={styles.countValue}>{peak}</span>
@@ -603,7 +635,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
         {step === "zone" && (
           <>
             <h2 className={styles.title}>
-              {watchingBags
+              {watchingBags || watchingCrowd
                 ? "Mark the area to watch"
                 : "Mark the restricted zone"}
             </h2>
@@ -661,7 +693,29 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
           </>
         )}
 
-        {step === "object" && !watchingBags && (
+        {step === "object" && watchingCrowd && (
+          <>
+            <h2 className={styles.title}>How many people are allowed?</h2>
+            <p className={styles.help}>
+              An event fires when more people than this are in your zone.
+            </p>
+            <input
+              className={styles.select}
+              type="number"
+              aria-label="Allowed people"
+              min={1}
+              max={500}
+              value={maxPeople}
+              onChange={(e) =>
+                setMaxPeople(
+                  Math.min(500, Math.max(0, Math.floor(Number(e.target.value)))),
+                )
+              }
+            />
+          </>
+        )}
+
+        {step === "object" && !watchingBags && !watchingCrowd && (
           <>
             <h2 className={styles.title}>What may not enter the zone?</h2>
             <select
@@ -696,6 +750,11 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
                 <>
                   Flag any <strong>{items.join(", ")}</strong> left in your
                   zone without its owner on {stream?.label}.
+                </>
+              ) : watchingCrowd ? (
+                <>
+                  Alert when more than <strong>{maxPeople} people</strong> are
+                  inside your zone on {stream?.label}.
                 </>
               ) : (
                 <>
@@ -739,6 +798,11 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
                   Watching <strong>{items.join(", ")}</strong> in your zone.
                   Green is with its owner (blue), amber is alone, red is
                   abandoned.
+                </>
+              ) : watchingCrowd ? (
+                <>
+                  Watching for more than <strong>{maxPeople} people</strong> in
+                  your zone. Counts are below the video.
                 </>
               ) : (
                 <>

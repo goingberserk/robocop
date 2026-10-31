@@ -16,7 +16,7 @@ npm run dev     # http://localhost:3000
 
 ## iMessage alerts
 
-`app/api/notify/route.ts` sends trespassing and left-luggage events through [Photon](https://photon.codes/docs/beta/get-started/imessage.md). The shared key is committed in `.env`. A shared line cannot text first, so the alert recipient has to text the assigned line once. Each alert has a text and a photo (the bag, the single object in the zone, or the whole zone when there are several), at most one alert every 5 seconds.
+`app/api/notify/route.ts` sends trespassing, left-luggage and crowded-space events through [Photon](https://photon.codes/docs/beta/get-started/imessage.md). The shared key is committed in `.env`. A shared line cannot text first, so the alert recipient has to text the assigned line once. Each alert has a text and a photo (the bag, the single object in the zone, or the whole zone when there are several), at most one alert every 5 seconds.
 
 ## Recording a new clip
 

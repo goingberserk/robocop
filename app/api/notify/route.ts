@@ -30,10 +30,22 @@ const isSmallInteger = (value: unknown) =>
   value >= 0 &&
   value < 100_000;
 
-const hasValidKind = (body: Record<string, unknown>) =>
-  body.kind === "luggage"
-    ? isSmallInteger(body.alone)
-    : body.kind === "zone" && isSmallInteger(body.count) && body.count !== 0;
+const hasValidKind = (body: Record<string, unknown>) => {
+  if (body.kind === "luggage") return isSmallInteger(body.alone);
+  if (!isSmallInteger(body.count) || body.count === 0) return false;
+  return body.kind === "crowd" ? isSmallInteger(body.limit) : body.kind === "zone";
+};
+
+const alertText = (body: NotifyRequest, at: string) => {
+  switch (body.kind) {
+    case "luggage":
+      return `robocop: ${body.category} left alone for ${body.alone} s at ${at} in the video.`;
+    case "crowd":
+      return `robocop: crowded, ${body.count} people in the zone (limit ${body.limit}) at ${at} in the video.`;
+    case "zone":
+      return `robocop: ${body.category} entered the zone (${body.count} in zone) at ${at} in the video.`;
+  }
+};
 
 const isValid = (body: Record<string, unknown>): body is NotifyRequest =>
   hasValidKind(body) &&
@@ -155,10 +167,7 @@ export async function POST(request: Request) {
         content: {
           type: "text",
           format: "plain",
-          text:
-            body.kind === "luggage"
-              ? `robocop: ${body.category} left alone for ${body.alone} s at ${minutes}:${seconds} in the video.`
-              : `robocop: ${body.category} entered the zone (${body.count} in zone) at ${minutes}:${seconds} in the video.`,
+          text: alertText(body, `${minutes}:${seconds}`),
         },
       },
     });

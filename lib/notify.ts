@@ -4,7 +4,11 @@ export type NotifyRequest = {
   time: number;
   // Base64 JPEG of what was detected.
   image?: string;
-} & ({ kind: "zone"; count: number } | { kind: "luggage"; alone: number });
+} & (
+  | { kind: "zone"; count: number }
+  | { kind: "luggage"; alone: number }
+  | { kind: "crowd"; count: number; limit: number }
+);
 
 export type NotifyStatus =
   | "sent"
