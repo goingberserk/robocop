@@ -14,7 +14,13 @@ import {
   LUGGAGE_CATEGORIES,
   LuggageWatch,
 } from "@/lib/luggage";
+import {
+  incidentNumber,
+  type IncidentBox,
+  type IncidentInput,
+} from "@/lib/incident";
 import type { NotifyRequest, NotifyResponse, NotifyStatus } from "@/lib/notify";
+import { entrySideOf, motionOf } from "@/lib/sentence";
 import type { Stream } from "@/lib/streams";
 import { type Track, Tracker } from "@/lib/tracker";
 import { boxInZone, type Point } from "@/lib/watch";
@@ -135,6 +141,24 @@ function cropDetection(
   return crop.toDataURL("image/jpeg", 0.85).split(",")[1];
 }
 
+// The whole detected frame, as the card's photograph. It is already at
+// inference size, so there is nothing to resize.
+const frameJpeg = (frame: HTMLCanvasElement) =>
+  frame.toDataURL("image/jpeg", 0.8).split(",")[1];
+
+const toIncidentBox = (
+  d: { box: Detection["box"]; label: string; score: number },
+  width: number,
+  height: number,
+): IncidentBox => ({
+  x: d.box.xmin / width,
+  y: d.box.ymin / height,
+  w: (d.box.xmax - d.box.xmin) / width,
+  h: (d.box.ymax - d.box.ymin) / height,
+  label: d.label,
+  score: d.score,
+});
+
 async function notify(
   request: NotifyRequest,
   attempts = 1,
@@ -188,6 +212,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
   const [goal, setGoal] = useState<string | null>(null);
   const [zone, setZone] = useState<Point[]>([]);
   const [zoneClosed, setZoneClosed] = useState(false);
+  const [zoneName, setZoneName] = useState("");
   const [cursor, setCursor] = useState<Point | null>(null);
   const [category, setCategory] = useState("person");
   const [maxPeople, setMaxPeople] = useState(5);
@@ -207,6 +232,10 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
   const imessageEnabled = useRef(true);
   const streak = useRef(0);
   const lastInZone = useRef(0);
+  // For the card's sentence: when the zone was first breached, and where the
+  // first object inside was on the previous frame.
+  const inZoneSince = useRef<number | null>(null);
+  const lastBox = useRef<IncidentBox | undefined>(undefined);
   const [tracker] = useState(() => new Tracker(BAG_TRACKING));
   const [luggage] = useState(() => new LuggageWatch());
 
@@ -226,6 +255,10 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
   );
   const drawing = step === "zone" && !zoneClosed;
   const detecting = started && status.kind === "ready";
+  const zoneTitle =
+    zoneName.trim() ||
+    (watchingBags || watchingCrowd ? "Watched area" : "Restricted zone");
+  const cameraName = stream?.label ?? "Camera";
 
   const handleVisible = useCallback(
     (result: VisibleResult) => {
@@ -262,7 +295,31 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
           }));
           setEvents((prev) => [...found, ...prev]);
           if (imessageEnabled.current) {
-            abandoned.forEach((bag, i) =>
+            abandoned.forEach((bag, i) => {
+              const owner =
+                bag.ownerId === null ? undefined : people.get(bag.ownerId);
+              const incident: IncidentInput | undefined = result.frame
+                ? {
+                    kind: "luggage",
+                    title: zoneTitle,
+                    camera: cameraName,
+                    at: new Date().toISOString(),
+                    incident: incidentNumber(found[i].id),
+                    frame: frameJpeg(result.frame),
+                    frameWidth: result.frame.width,
+                    frameHeight: result.frame.height,
+                    zone,
+                    boxes: [
+                      toIncidentBox(bag.track, result.width, result.height),
+                      ...(owner
+                        ? [toIncidentBox({ box: owner, label: "person", score: 1 }, result.width, result.height)]
+                        : []),
+                    ],
+                    count: 1,
+                    dwellSeconds: Math.floor(bag.alone),
+                    category: bag.track.label,
+                  }
+                : undefined;
               send(
                 {
                   kind: "luggage",
@@ -274,17 +331,31 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
                   image: result.frame
                     ? cropDetection(result.frame, bag.track.box, 1)
                     : undefined,
+                  incident,
                 },
                 LUGGAGE_SEND_ATTEMPTS,
-              ),
-            );
+              );
+            });
           }
         }
         return;
       }
 
-      const count = countInZone(result, zone);
+      const inside = result.detections.filter((d) =>
+        boxInZone(d.box, zone, result.width, result.height),
+      );
+      const count = inside.length;
       setPeak((prev) => Math.max(prev, count));
+      const firstBox = inside[0]
+        ? toIncidentBox(inside[0], result.width, result.height)
+        : undefined;
+      const previousBox = lastBox.current;
+      lastBox.current = firstBox;
+      if (count > allowed) {
+        inZoneSince.current ??= result.time;
+      } else {
+        inZoneSince.current = null;
+      }
 
       streak.current = count > allowed ? streak.current + 1 : 0;
       if (streak.current < EVENT_MIN_FRAMES) return;
@@ -300,15 +371,37 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
         };
         setEvents((prev) => [event, ...prev]);
         if (imessageEnabled.current) {
-          const inside = result.detections.filter((d) =>
-            boxInZone(d.box, zone, result.width, result.height),
-          );
           const box =
             inside.length === 1
               ? inside[0].box
               : zoneBox(zone, result.width, result.height);
           const image = result.frame
             ? cropDetection(result.frame, box, inside.length === 1 ? 0.3 : 0)
+            : undefined;
+          const incident: IncidentInput | undefined = result.frame
+            ? {
+                kind: watchingCrowd ? "crowd" : "zone",
+                title: zoneTitle,
+                camera: cameraName,
+                at: new Date().toISOString(),
+                incident: incidentNumber(event.id),
+                frame: frameJpeg(result.frame),
+                frameWidth: result.frame.width,
+                frameHeight: result.frame.height,
+                zone,
+                boxes: inside.map((d) =>
+                  toIncidentBox(d, result.width, result.height),
+                ),
+                count,
+                limit: watchingCrowd ? allowed : undefined,
+                dwellSeconds:
+                  inZoneSince.current === null
+                    ? 0
+                    : Math.max(0, Math.round(result.time - inZoneSince.current)),
+                category: counted,
+                entrySide: firstBox ? entrySideOf(firstBox, zone) : undefined,
+                motion: firstBox ? motionOf(previousBox, firstBox) : undefined,
+              }
             : undefined;
           const details = {
             id: event.id,
@@ -317,6 +410,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
             count,
             time: result.time,
             image,
+            incident,
           };
           send(
             watchingCrowd
@@ -337,6 +431,8 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
       counted,
       allowed,
       footage,
+      zoneTitle,
+      cameraName,
     ],
   );
 
@@ -681,6 +777,18 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
                   ? `Click in the video to place corners (${zone.length} of ${MIN_POINTS}).`
                   : "Add more corners, or close the area."}
             </p>
+            <input
+              className={styles.select}
+              type="text"
+              aria-label="Zone name"
+              placeholder={
+                watchingBags || watchingCrowd
+                  ? "Name this area, e.g. Gate 12"
+                  : "Name this zone, e.g. Loading dock"
+              }
+              value={zoneName}
+              onChange={(e) => setZoneName(e.target.value.slice(0, 40))}
+            />
             {!zoneClosed && zone.length >= MIN_POINTS && (
               <button
                 type="button"

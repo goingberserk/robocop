@@ -54,6 +54,10 @@ export function sentenceFor(
         : "no one is within reach of it";
     return `${capitalize(input.category)} left alone for ${alone} s in ${input.title}; ${who}.`;
   }
+  if (input.kind === "crowd") {
+    const over = input.count - (input.limit ?? 0);
+    return `${input.count} people in ${input.title}, ${over} over the limit of ${input.limit ?? 0}.`;
+  }
   const parts = [`${capitalize(plural(input.count, input.category))} entered ${input.title}`];
   if (input.entrySide) parts.push(`from the ${input.entrySide}`);
   if (input.dwellSeconds !== undefined && input.dwellSeconds > 0) {

@@ -10,8 +10,10 @@ import {
 // The incident card sent as the alert image. Rendered with satori, so every
 // box with more than one child is display:flex and sizes are explicit.
 const W = 1200;
-const SHOT_H = Math.round((W * 9) / 16);
-const H = 64 + 104 + SHOT_H + 112 + 118 + 62;
+// The frame keeps its own aspect, within limits, so portrait phone footage
+// is not cropped to a letterbox.
+const shotHeightFor = (fw: number, fh: number) =>
+  Math.max(500, Math.min(1000, Math.round((W * fh) / Math.max(fw, 1))));
 
 const NAVY = "#0d1424";
 const MUTED = "#93a0b8";
@@ -42,22 +44,33 @@ function loadFonts() {
   return fonts;
 }
 
-const pct = (v: number) => `${(v * 100).toFixed(2)}%`;
-
 export async function renderIncidentCard(input: IncidentInput): Promise<Buffer> {
+  const SHOT_H = shotHeightFor(input.frameWidth, input.frameHeight);
+  const H = 64 + 104 + SHOT_H + 112 + 118 + 62;
   const sentence = input.sentence ?? plainSentence(input);
-  const heading = input.kind === "luggage" ? "Left luggage" : "Intrusion";
+  const heading =
+    input.kind === "luggage" ? "Left luggage" : input.kind === "crowd" ? "Crowded" : "Intrusion";
   const zonePoints = input.zone
     .map((p) => `${(p.x * W).toFixed(1)},${(p.y * SHOT_H).toFixed(1)}`)
     .join(" ");
+  const noun =
+    input.kind === "crowd"
+      ? "people"
+      : input.count === 1
+        ? input.category
+        : input.category === "person"
+          ? "people"
+          : `${input.category}s`;
   const metaA =
     input.kind === "luggage"
       ? { k: "Alone for", v: `${input.dwellSeconds ?? 0} s` }
-      : { k: "In zone", v: `${input.count} ${input.category}${input.count === 1 ? "" : "s"}` };
+      : { k: "In zone", v: `${input.count} ${noun}` };
   const metaB =
     input.kind === "luggage"
       ? { k: "Item", v: input.category }
-      : { k: "Dwell", v: input.dwellSeconds !== undefined ? `${input.dwellSeconds} s` : "just now" };
+      : input.kind === "crowd"
+        ? { k: "Limit", v: `${input.limit ?? 0}` }
+        : { k: "Dwell", v: input.dwellSeconds ? `${input.dwellSeconds} s` : "just now" };
 
   const response = new ImageResponse(
     (

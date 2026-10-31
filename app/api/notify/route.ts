@@ -1,12 +1,16 @@
 import { ApiError, Photon } from "@photon-ai/api";
+import { renderIncidentCard } from "@/lib/card/render";
 import { OTHER_CATEGORIES, STREET_CATEGORIES } from "@/lib/detection";
+import { formatClock, type IncidentInput } from "@/lib/incident";
 import type { NotifyRequest, NotifyResponse } from "@/lib/notify";
+import { sentenceFor } from "@/lib/sentence";
 import { streams } from "@/lib/streams";
 
 // This route is public and its key is not, so it only ever sends one fixed kind
 // of text to one configured person, at a limited rate.
 const MIN_INTERVAL_MS = 5_000;
 const MAX_IMAGE_BYTES = 1_000_000;
+const MAX_FRAME_BYTES = 1_500_000;
 
 const CATEGORIES = new Set([...STREET_CATEGORIES, ...OTHER_CATEGORIES]);
 
@@ -31,10 +35,67 @@ const isSmallInteger = (value: unknown) =>
   value >= 0 &&
   value < 100_000;
 
+const isUnit = (value: unknown) =>
+  typeof value === "number" && Number.isFinite(value) && value >= -0.5 && value <= 1.5;
+
+const isShortString = (value: unknown, max: number) =>
+  typeof value === "string" && value.length > 0 && value.length <= max;
+
 const hasValidKind = (body: Record<string, unknown>) => {
   if (body.kind === "luggage") return isSmallInteger(body.alone);
   if (!isSmallInteger(body.count) || body.count === 0) return false;
   return body.kind === "crowd" ? isSmallInteger(body.limit) : body.kind === "zone";
+};
+
+// The whole frame plus geometry, from which the card is drawn. Checked field
+// by field because the route is public.
+const isIncident = (value: unknown): value is IncidentInput => {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  const zone = v.zone as unknown[];
+  const boxes = v.boxes as Record<string, unknown>[];
+  return (
+    (v.kind === "zone" || v.kind === "luggage" || v.kind === "crowd") &&
+    isShortString(v.title, 60) &&
+    isShortString(v.camera, 60) &&
+    isShortString(v.at, 40) &&
+    !Number.isNaN(Date.parse(v.at as string)) &&
+    typeof v.incident === "string" &&
+    /^\d{4}$/.test(v.incident) &&
+    typeof v.frame === "string" &&
+    v.frame.length <= MAX_FRAME_BYTES * 1.37 &&
+    isSmallInteger(v.frameWidth) &&
+    isSmallInteger(v.frameHeight) &&
+    (v.frameWidth as number) >= 16 &&
+    (v.frameHeight as number) >= 16 &&
+    Array.isArray(zone) &&
+    zone.length <= 64 &&
+    zone.every((p) => {
+      const q = p as Record<string, unknown>;
+      return q && isUnit(q.x) && isUnit(q.y);
+    }) &&
+    Array.isArray(boxes) &&
+    boxes.length <= 32 &&
+    boxes.every(
+      (b) =>
+        b &&
+        isUnit(b.x) &&
+        isUnit(b.y) &&
+        isUnit(b.w) &&
+        isUnit(b.h) &&
+        isShortString(b.label, 32) &&
+        typeof b.score === "number",
+    ) &&
+    isSmallInteger(v.count) &&
+    (v.limit === undefined || isSmallInteger(v.limit)) &&
+    (v.dwellSeconds === undefined || isSmallInteger(v.dwellSeconds)) &&
+    typeof v.category === "string" &&
+    CATEGORIES.has(v.category) &&
+    (v.entrySide === undefined ||
+      ["left", "right", "far end", "near side"].includes(v.entrySide as string)) &&
+    (v.motion === undefined || v.motion === "moving" || v.motion === "stopped") &&
+    v.sentence === undefined
+  );
 };
 
 const PLURALS: Record<string, string> = {
@@ -70,6 +131,7 @@ const alertLines = (body: NotifyRequest): [string, string] => {
   }
 };
 
+// The text-only alert, used when no incident card was sent with the event.
 const alertText = (body: NotifyRequest) => {
   const [title, detail] = alertLines(body);
   const stream = streams.find((s) => s.id === body.source)!;
@@ -82,6 +144,9 @@ const alertText = (body: NotifyRequest) => {
   return `${title}\n${detail}\n\nSource: ${source}`;
 };
 
+const headingFor = (kind: IncidentInput["kind"]) =>
+  kind === "luggage" ? "Left luggage" : kind === "crowd" ? "Crowded" : "Intrusion";
+
 const isValid = (body: Record<string, unknown>): body is NotifyRequest =>
   hasValidKind(body) &&
   typeof body.id === "string" &&
@@ -91,13 +156,14 @@ const isValid = (body: Record<string, unknown>): body is NotifyRequest =>
   CATEGORIES.has(body.category) &&
   typeof body.time === "number" &&
   body.time >= 0 &&
-  (body.image === undefined || typeof body.image === "string");
+  (body.image === undefined || typeof body.image === "string") &&
+  (body.incident === undefined || isIncident(body.incident));
 
-// Only accept what the client is meant to send: a small JPEG.
-function decodeJpeg(image: string): Uint8Array<ArrayBuffer> | undefined {
+// Only accept what the client is meant to send: a JPEG within the size limit.
+function decodeJpeg(image: string, max: number): Uint8Array<ArrayBuffer> | undefined {
   const bytes = new Uint8Array(Buffer.from(image, "base64"));
   const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-  return isJpeg && bytes.length <= MAX_IMAGE_BYTES ? bytes : undefined;
+  return isJpeg && bytes.length <= max ? bytes : undefined;
 }
 
 async function sendImage(
@@ -106,16 +172,14 @@ async function sendImage(
   target: Conversation,
   id: string,
   bytes: Uint8Array<ArrayBuffer>,
+  contentType: "image/jpeg" | "image/png",
+  filename: string,
 ) {
   const boundary = crypto.randomUUID();
-  const metadata = JSON.stringify({
-    contentType: "image/jpeg",
-    sizeBytes: bytes.length,
-    filename: "detection.jpg",
-  });
+  const metadata = JSON.stringify({ contentType, sizeBytes: bytes.length, filename });
   const body = new Blob([
     `--${boundary}\r\nContent-Type: application/json\r\n\r\n${metadata}\r\n`,
-    `--${boundary}\r\nContent-Type: image/jpeg\r\n\r\n`,
+    `--${boundary}\r\nContent-Type: ${contentType}\r\n\r\n`,
     bytes,
     `\r\n--${boundary}--\r\n`,
   ]);
@@ -136,6 +200,41 @@ async function sendImage(
       content: { type: "attachment", attachmentId: attachment.id },
     },
   });
+}
+
+async function sendText(
+  photon: Photon,
+  project: string,
+  target: Conversation,
+  key: string,
+  text: string,
+  format: "plain" | "markdown",
+) {
+  await photon.projects.sendMessage({
+    path: { id: project },
+    headers: { "idempotency-key": key },
+    body: { ...target, content: { type: "text", format, text } },
+  });
+}
+
+// The header above the card: a bold first line, then the facts. Photon turns
+// markdown into native iMessage styling; if this line rejects it, send plain.
+async function sendHeader(
+  photon: Photon,
+  project: string,
+  target: Conversation,
+  id: string,
+  incident: IncidentInput,
+) {
+  const facts = `${incident.camera} · ${formatClock(incident.at)} · #${incident.incident}`;
+  const title = `${headingFor(incident.kind)} · ${incident.title}`;
+  try {
+    await sendText(photon, project, target, `zone-event:${id}`, `**${title}**\n${facts}`, "markdown");
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status < 400 || error.status >= 500) throw error;
+    console.error(`Photon rejected markdown (${error.status}); sending plain.`);
+    await sendText(photon, project, target, `zone-event:${id}:plain`, `${title}\n${facts}`, "plain");
+  }
 }
 
 // A shared line cannot send the first message, so the conversation comes from
@@ -169,6 +268,15 @@ async function findConversation(
   );
 }
 
+const logImageError = (error: unknown) =>
+  console.error(
+    error instanceof ApiError
+      ? `Photon image error ${error.status} (request ${error.requestId ?? "unknown"}).`
+      : error instanceof Error
+        ? `Image failed: ${error.message}`
+        : "Image failed.",
+  );
+
 export async function POST(request: Request) {
   const key = process.env.PHOTON_API_KEY;
   const project = process.env.PHOTON_PROJECT_ID;
@@ -193,30 +301,49 @@ export async function POST(request: Request) {
       lastSentAt = 0;
       return reply({ status: "no_conversation" }, 409);
     }
-    await photon.projects.sendMessage({
-      path: { id: project },
-      headers: { "idempotency-key": `zone-event:${body.id}` },
-      body: {
-        ...conversation,
-        content: {
-          type: "text",
-          format: "plain",
-          text: alertText(body),
-        },
-      },
-    });
+
+    // The incident card: a styled header, then the rendered PNG.
+    if (body.incident && decodeJpeg(body.incident.frame, MAX_FRAME_BYTES)) {
+      const incident: IncidentInput = {
+        ...body.incident,
+        sentence: sentenceFor(body.incident),
+      };
+      await sendHeader(photon, project, conversation, body.id, incident);
+      try {
+        const png = await renderIncidentCard(incident);
+        await sendImage(
+          photon,
+          project,
+          conversation,
+          body.id,
+          new Uint8Array(png.buffer, png.byteOffset, png.byteLength) as Uint8Array<ArrayBuffer>,
+          "image/png",
+          `incident-${incident.incident}.png`,
+        );
+        return reply({ status: "sent" }, 200);
+      } catch (error) {
+        logImageError(error);
+        return reply({ status: "sent_without_image" }, 200);
+      }
+    }
+
+    // Without a card: the text alert and the cropped detection.
+    await sendText(
+      photon,
+      project,
+      conversation,
+      `zone-event:${body.id}`,
+      alertText(body),
+      "plain",
+    );
     if (!body.image) return reply({ status: "sent_without_image" }, 200);
     try {
-      const bytes = decodeJpeg(body.image);
+      const bytes = decodeJpeg(body.image, MAX_IMAGE_BYTES);
       if (!bytes) throw new Error("Invalid image.");
-      await sendImage(photon, project, conversation, body.id, bytes);
+      await sendImage(photon, project, conversation, body.id, bytes, "image/jpeg", "detection.jpg");
       return reply({ status: "sent" }, 200);
     } catch (error) {
-      console.error(
-        error instanceof ApiError
-          ? `Photon image error ${error.status} (request ${error.requestId ?? "unknown"}).`
-          : "Photon image failed.",
-      );
+      logImageError(error);
       return reply({ status: "sent_without_image" }, 200);
     }
   } catch (error) {

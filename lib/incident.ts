@@ -13,7 +13,7 @@ export type IncidentBox = {
 };
 
 export type IncidentInput = {
-  kind: "zone" | "luggage";
+  kind: "zone" | "luggage" | "crowd";
   // What the zone protects, e.g. "Server aisle B". Falls back to the footage.
   title: string;
   // Where the frame came from, e.g. "Live camera" or "Airport security queue".
@@ -28,8 +28,11 @@ export type IncidentInput = {
   frameHeight: number;
   zone: Point[];
   boxes: IncidentBox[];
-  // Zone events: how many are inside. Luggage: how long the bag sat alone.
+  // Zone and crowd events: how many are inside. Luggage: how long the bag sat
+  // alone is dwellSeconds.
   count: number;
+  // Crowd events: how many were allowed.
+  limit?: number;
   dwellSeconds?: number;
   category: string;
   // Measured on the client from the box and the zone; see lib/sentence.ts.
@@ -60,6 +63,9 @@ export function plainSentence(input: IncidentInput): string {
   if (input.kind === "luggage") {
     const secs = input.dwellSeconds ?? 0;
     return `${capitalize(input.category)} left alone for ${secs} seconds in ${input.title}.`;
+  }
+  if (input.kind === "crowd") {
+    return `${input.count} people in ${input.title}, limit ${input.limit ?? 0}.`;
   }
   const n = input.count;
   return `${n} ${input.category}${n === 1 ? "" : "s"} in ${input.title}.`;
