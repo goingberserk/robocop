@@ -1,5 +1,6 @@
 export type Stream = {
   id: string;
+  label: string;
   title: string;
   location: string;
   youtubeId: string;
@@ -10,6 +11,7 @@ export type Stream = {
 export const streams: Stream[] = [
   {
     id: "watertown-public-square",
+    label: "Auto video 1",
     title: "Public Square",
     location: "Watertown, NY",
     youtubeId: "Zz9hMrxl20I",

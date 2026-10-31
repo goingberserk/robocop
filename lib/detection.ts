@@ -24,7 +24,30 @@ export const MODEL_ID = "onnx-community/rfdetr_medium-ONNX";
 // Lowest score the worker returns; the UI filters further with its slider.
 export const MIN_SCORE = 0.2;
 
-export const CLASSES = [
-  { label: "car", color: "#3b9eff" },
-  { label: "person", color: "#fb7185" },
-] as const;
+export const STREET_CATEGORIES = [
+  "person",
+  "car",
+  "truck",
+  "bus",
+  "bicycle",
+  "motorcycle",
+  "traffic light",
+  "stop sign",
+  "parking meter",
+  "fire hydrant",
+  "bench",
+];
+
+// The remaining COCO classes the model is trained on.
+export const OTHER_CATEGORIES = [
+  "airplane", "apple", "backpack", "banana", "baseball bat", "baseball glove",
+  "bear", "bed", "bird", "boat", "book", "bottle", "bowl", "broccoli", "cake",
+  "carrot", "cat", "cell phone", "chair", "clock", "couch", "cow", "cup",
+  "dining table", "dog", "donut", "elephant", "fork", "frisbee", "giraffe",
+  "hair drier", "handbag", "horse", "hot dog", "keyboard", "kite", "knife",
+  "laptop", "microwave", "mouse", "orange", "oven", "pizza", "potted plant",
+  "refrigerator", "remote", "sandwich", "scissors", "sheep", "sink",
+  "skateboard", "skis", "snowboard", "spoon", "sports ball", "suitcase",
+  "surfboard", "teddy bear", "tennis racket", "tie", "toaster", "toilet",
+  "toothbrush", "train", "tv", "umbrella", "vase", "wine glass", "zebra",
+];

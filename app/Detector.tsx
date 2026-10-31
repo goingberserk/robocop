@@ -2,37 +2,53 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  CLASSES,
   type Detection,
   type WorkerRequest,
   type WorkerResponse,
 } from "@/lib/detection";
+import { boxInZone, type Point } from "@/lib/watch";
 import styles from "./Detector.module.css";
 
 // Frames are downscaled before inference; the model works at 576px anyway.
 const FRAME_WIDTH = 1024;
+const BOX_COLOR = "#fb7185";
 
-type Status =
+export type Status =
   | { kind: "loading"; progress: number }
   | { kind: "ready"; device: string; dtype: string }
   | { kind: "error"; message: string };
 
-type Result = {
+export type Result = {
   detections: Detection[];
   width: number;
   height: number;
 };
 
-const COLORS = new Map<string, string>(CLASSES.map((c) => [c.label, c.color]));
+export type VisibleResult = Result & { time: number };
 
-export default function Detector({ src }: { src: string }) {
+export default function Detector({
+  src,
+  category,
+  active,
+  boxZone,
+  onStatus,
+  onVisible,
+  children,
+}: {
+  src?: string;
+  category: string;
+  // The model only loads once detection is started.
+  active: boolean;
+  // When set, only boxes inside this zone are drawn. Counts are unaffected.
+  boxZone: Point[] | null;
+  onStatus: (status: Status) => void;
+  onVisible: (visible: VisibleResult) => void;
+  children?: React.ReactNode;
+}) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const [status, setStatus] = useState<Status>({ kind: "loading", progress: 0 });
-  const [enabled, setEnabled] = useState<Set<string>>(
-    () => new Set(CLASSES.map((c) => c.label)),
-  );
   const [threshold, setThreshold] = useState(0.35);
   const [result, setResult] = useState<Result | null>(null);
   const [inferenceMs, setInferenceMs] = useState<number | null>(null);
@@ -41,19 +57,25 @@ export default function Detector({ src }: { src: string }) {
   const visible = useMemo(
     () =>
       result?.detections.filter(
-        (d) => d.score >= threshold && enabled.has(d.label),
+        (d) => d.score >= threshold && d.label === category,
       ) ?? [],
-    [result, enabled, threshold],
+    [result, category, threshold],
   );
 
-  const counts = useMemo(() => {
-    const tally: Record<string, number> = {};
-    for (const d of visible) tally[d.label] = (tally[d.label] ?? 0) + 1;
-    return tally;
-  }, [visible]);
+  useEffect(() => onStatus(status), [status, onStatus]);
+
+  useEffect(() => {
+    if (!result) return;
+    onVisible({
+      ...result,
+      detections: visible,
+      time: videoRef.current?.currentTime ?? 0,
+    });
+  }, [result, visible, onVisible]);
 
   // Inference loop: one frame in flight at a time, always the newest frame.
   useEffect(() => {
+    if (!active) return;
     const video = videoRef.current!;
     const worker = new Worker(new URL("./detector.worker.ts", import.meta.url), {
       type: "module",
@@ -118,8 +140,11 @@ export default function Detector({ src }: { src: string }) {
       video.removeEventListener("play", onFrameChange);
       video.removeEventListener("seeked", onFrameChange);
       video.removeEventListener("loadeddata", onFrameChange);
+      setResult(null);
+      setInferenceMs(null);
+      setStatus({ kind: "loading", progress: 0 });
     };
-  }, []);
+  }, [active]);
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -148,32 +173,26 @@ export default function Detector({ src }: { src: string }) {
     ctx.textBaseline = "top";
     ctx.lineWidth = 2;
     for (const d of visible) {
-      const color = COLORS.get(d.label) ?? "#fff";
-      const x = d.box.xmin * sx;
+      if (boxZone && !boxInZone(d.box, boxZone, result.width, result.height)) {
+        continue;
+      }
+            const x = d.box.xmin * sx;
       const y = d.box.ymin * sy;
       const w = (d.box.xmax - d.box.xmin) * sx;
       const h = (d.box.ymax - d.box.ymin) * sy;
 
-      ctx.strokeStyle = color;
+      ctx.strokeStyle = BOX_COLOR;
       ctx.strokeRect(x, y, w, h);
 
       const text = `${d.label} ${Math.round(d.score * 100)}`;
       const tw = ctx.measureText(text).width + 8;
       const ty = y >= 18 ? y - 18 : y;
-      ctx.fillStyle = color;
+      ctx.fillStyle = BOX_COLOR;
       ctx.fillRect(x - 1, ty, tw, 18);
       ctx.fillStyle = "#000";
       ctx.fillText(text, x + 3, ty + 3);
     }
-  }, [result, visible, size]);
-
-  const toggle = (label: string) =>
-    setEnabled((prev) => {
-      const next = new Set(prev);
-      if (next.has(label)) next.delete(label);
-      else next.add(label);
-      return next;
-    });
+  }, [result, visible, size, boxZone]);
 
   return (
     <div className={styles.root}>
@@ -190,31 +209,11 @@ export default function Detector({ src }: { src: string }) {
           controls
         />
         <canvas ref={canvasRef} className={styles.overlay} />
-        {status.kind !== "ready" && (
-          <div className={styles.status}>
-            {status.kind === "loading"
-              ? `Loading model… ${Math.round(status.progress * 100)}%`
-              : `Detection failed: ${status.message}`}
-          </div>
-        )}
+        {children}
       </div>
 
+      {active && status.kind === "ready" && (
       <div className={styles.controls}>
-        <div className={styles.chips}>
-          {CLASSES.map((c) => (
-            <button
-              key={c.label}
-              type="button"
-              className={styles.chip}
-              aria-pressed={enabled.has(c.label)}
-              onClick={() => toggle(c.label)}
-              style={{ "--chip": c.color } as React.CSSProperties}
-            >
-              {c.label}
-              <span className={styles.count}>{counts[c.label] ?? 0}</span>
-            </button>
-          ))}
-        </div>
         <label className={styles.threshold}>
           Confidence ≥ {Math.round(threshold * 100)}%
           <input
@@ -232,6 +231,7 @@ export default function Detector({ src }: { src: string }) {
           {inferenceMs !== null && ` · ${Math.round(inferenceMs)} ms/frame`}
         </div>
       </div>
+      )}
     </div>
   );
 }

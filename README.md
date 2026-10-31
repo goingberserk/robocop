@@ -4,6 +4,7 @@ Car and person detection on a recorded clip of the Public Square live cam (Water
 
 - `app/Detector.tsx` plays the clip and draws boxes on a canvas overlay.
 - `app/detector.worker.ts` runs [RF-DETR medium](https://huggingface.co/onnx-community/rfdetr_medium-ONNX) in the browser with transformers.js (WebGPU fp32, WASM q8 fallback).
+- `app/Workspace.tsx` is the step-by-step setup: footage, goal, zone, object, start. Only the trespassing goal works so far; the model loads on start.
 - The clip lives in Vercel Blob; its URL is in `lib/streams.ts`.
 
 ```bash
