@@ -1,4 +1,5 @@
-import type { Track } from "./tracker";
+import type { Detection } from "./detection";
+import { iou, type Track } from "./tracker";
 import { boxInZone, type Point } from "./watch";
 
 export const LUGGAGE_CATEGORIES = ["suitcase", "backpack", "handbag"];
@@ -9,8 +10,46 @@ const SETTLE_SECONDS = 1.5;
 // jitter between frames.
 const MOVE_TOLERANCE = 0.5;
 // A person attends a bag when their feet are within this many of their own
-// heights from it. Scaling by height roughly corrects for perspective.
-const OWNER_REACH = 1;
+// heights from where the bag touches the ground. Scaling by height roughly
+// corrects for perspective.
+const OWNER_REACH = 0.75;
+// Cameras look down at an angle, so a gap up or down the image is much more
+// distance on the floor than the same gap across it.
+const DEPTH_WEIGHT = 1.5;
+// Detections of a bag on the floor flicker in and out, and a new track would
+// raise a second alert for the same bag. Bags only move when carried.
+const BAG_MAX_AGE = 10;
+// A bag track lives on unseen so the same bag keeps its id, but one hidden
+// this long may have been carried off, so it no longer counts.
+const HIDDEN_SECONDS = 2;
+// Overlapping bag boxes this much are the same bag seen twice.
+const DUPLICATE_IOU = 0.3;
+
+// The model sometimes puts two boxes, often of different bag labels, on one
+// bag. Keep only the most confident so each bag is tracked once.
+export const dedupeBags = (detections: Detection[]) => {
+  const kept: Detection[] = [];
+  const sorted = [...detections].sort((a, b) => b.score - a.score);
+  for (const d of sorted) {
+    const isBag = LUGGAGE_CATEGORIES.includes(d.label);
+    const duplicate =
+      isBag &&
+      kept.some(
+        (k) =>
+          LUGGAGE_CATEGORIES.includes(k.label) &&
+          iou(k.box, d.box) >= DUPLICATE_IOU,
+      );
+    if (!duplicate) kept.push(d);
+  }
+  return kept;
+};
+
+// Settings for a Tracker that follows bags through flickering detections.
+export const BAG_TRACKING = {
+  maxAge: Object.fromEntries(LUGGAGE_CATEGORIES.map((c) => [c, BAG_MAX_AGE])),
+  kinds: Object.fromEntries(LUGGAGE_CATEGORIES.map((c) => [c, "bag"])),
+};
+
 // A bag whose owner was lost can be picked up again by whoever stands closest
 // within this window, since the tracker loses people behind others.
 const REUNITE_SECONDS = 3;
@@ -43,10 +82,10 @@ const size = ({ box }: Track) =>
 
 // How close a person stands to a bag, in multiples of the person's height.
 const reach = (person: Track, bag: Track) => {
-  const feet = { x: (person.box.xmin + person.box.xmax) / 2, y: person.box.ymax };
-  const { x, y } = centre(bag);
+  const dx = (person.box.xmin + person.box.xmax - bag.box.xmin - bag.box.xmax) / 2;
+  const dy = person.box.ymax - bag.box.ymax;
   const height = person.box.ymax - person.box.ymin;
-  return Math.hypot(feet.x - x, feet.y - y) / height;
+  return Math.hypot(dx, dy * DEPTH_WEIGHT) / height;
 };
 
 const nearest = (bag: Track, people: Track[]) => {
@@ -94,6 +133,7 @@ export class LuggageWatch {
       if (track.label === "person") continue;
       if (!boxInZone(track.box, zone, width, height)) continue;
       seen.add(track.id);
+      if (time - track.lastSeen > HIDDEN_SECONDS) continue;
 
       let memory = this.memory.get(track.id);
       const moved =

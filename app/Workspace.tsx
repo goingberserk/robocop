@@ -8,7 +8,9 @@ import {
 } from "@/lib/detection";
 import {
   type Bag,
+  BAG_TRACKING,
   type BagState,
+  dedupeBags,
   LUGGAGE_CATEGORIES,
   LuggageWatch,
 } from "@/lib/luggage";
@@ -205,7 +207,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
   const imessageEnabled = useRef(true);
   const streak = useRef(0);
   const lastInZone = useRef(0);
-  const [tracker] = useState(() => new Tracker());
+  const [tracker] = useState(() => new Tracker(BAG_TRACKING));
   const [luggage] = useState(() => new LuggageWatch());
 
   const step = STEPS[stepIndex];
@@ -235,7 +237,10 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
           ),
         );
       if (watchingBags) {
-        const tracks = tracker.update(result.detections, result.time);
+        const tracks = tracker.update(
+          dedupeBags(result.detections),
+          result.time,
+        );
         const { bags, abandoned } = luggage.update(tracks, {
           zone,
           width: result.width,

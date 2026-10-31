@@ -11,15 +11,15 @@ export type Track = {
   lastSeen: number;
 };
 
-// Video seconds a track survives without a matching detection. People walking
-// past hide objects all the time.
+// Video seconds a track survives without a matching detection, by default.
+// People walking past hide objects all the time.
 const MAX_AGE = 2;
 const MIN_IOU = 0.2;
 // At a few frames a second a walking person can move clear of their old box,
 // so a close centre still counts as a (weak) match.
 const MAX_JUMP = 0.6;
 
-const iou = (a: Box, b: Box) => {
+export const iou = (a: Box, b: Box) => {
   const w = Math.min(a.xmax, b.xmax) - Math.max(a.xmin, b.xmin);
   const h = Math.min(a.ymax, b.ymax) - Math.max(a.ymin, b.ymin);
   if (w <= 0 || h <= 0) return 0;
@@ -39,11 +39,32 @@ const affinity = (a: Box, b: Box) => {
 };
 
 // Gives detections stable ids across frames by greedily matching each new
-// detection to the existing track of the same label it overlaps most.
+// detection to the existing track of the same kind it overlaps most.
 export class Tracker {
   private tracks: Track[] = [];
   private nextId = 1;
   private lastTime = -Infinity;
+  private maxAge: Record<string, number>;
+  private kinds: Record<string, string>;
+
+  constructor({
+    maxAge = {},
+    kinds = {},
+  }: {
+    // Keeps some labels alive longer, such as objects that only move when
+    // someone carries them.
+    maxAge?: Record<string, number>;
+    // Labels the model confuses, such as backpack and handbag, mapped to one
+    // kind so a track survives the label flipping between them.
+    kinds?: Record<string, string>;
+  } = {}) {
+    this.maxAge = maxAge;
+    this.kinds = kinds;
+  }
+
+  private kind(label: string) {
+    return this.kinds[label] ?? label;
+  }
 
   update(detections: Detection[], time: number): Track[] {
     // The clip looped or was seeked backwards.
@@ -53,7 +74,7 @@ export class Tracker {
     const pairs: { track: Track; detection: Detection; score: number }[] = [];
     for (const track of this.tracks) {
       for (const detection of detections) {
-        if (detection.label !== track.label) continue;
+        if (this.kind(detection.label) !== this.kind(track.label)) continue;
         const score = affinity(track.box, detection.box);
         if (score > 0) pairs.push({ track, detection, score });
       }
@@ -66,6 +87,7 @@ export class Tracker {
       if (matchedTracks.has(track) || matchedDetections.has(detection)) continue;
       matchedTracks.add(track);
       matchedDetections.add(detection);
+      track.label = detection.label;
       track.box = detection.box;
       track.score = detection.score;
       track.lastSeen = time;
@@ -83,7 +105,9 @@ export class Tracker {
       });
     }
 
-    this.tracks = this.tracks.filter((t) => time - t.lastSeen <= MAX_AGE);
+    this.tracks = this.tracks.filter(
+      (t) => time - t.lastSeen <= (this.maxAge[t.label] ?? MAX_AGE),
+    );
     return this.tracks;
   }
 
