@@ -10,8 +10,7 @@
   margin: 0 auto;
   background: #0b0e11;
   border: 1px solid var(--border);
-  border-radius: 16px;
-  box-shadow: var(--shadow);
+  border-radius: 14px;
   overflow: hidden;
 }
 
@@ -51,4 +50,5 @@
   margin-left: auto;
   color: var(--muted);
   font-family: var(--font-geist-mono);
+  font-size: 12px;
 }

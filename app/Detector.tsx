@@ -205,7 +205,7 @@ export default function Detector({
 
     const sx = size.width / result.width;
     const sy = size.height / result.height;
-    ctx.font = "600 12px ui-monospace, monospace";
+    ctx.font = "600 11px ui-monospace, monospace";
     ctx.textBaseline = "top";
     const boxes: Annotation[] =
       annotations ??
@@ -231,9 +231,9 @@ export default function Detector({
       if (!label) continue;
 
       const tw = ctx.measureText(label).width + 8;
-      const ty = y >= 18 ? y - 18 : y;
+      const ty = y >= 16 ? y - 16 : y;
       ctx.fillStyle = color;
-      ctx.fillRect(x - 1, ty, tw, 18);
+      ctx.fillRect(x - 0.75, ty, tw, 16);
       ctx.fillStyle = "#000";
       ctx.fillText(label, x + 3, ty + 3);
     }
@@ -262,7 +262,7 @@ export default function Detector({
           muted
           loop={!live}
           playsInline
-          controls={!live}
+          controls={!live && Boolean(src)}
         />
         <canvas ref={canvasRef} className={styles.overlay} />
         {children}

@@ -77,6 +77,52 @@
   cursor: pointer;
 }
 
+.livePill {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px 5px 9px;
+  border-radius: 999px;
+  background: rgb(11 14 17 / 0.72);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+
+.livePill[data-alert] {
+  background: #d4352b;
+}
+
+.liveDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #3ccf9e;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.livePill[data-alert] .liveDot {
+  background: #fff;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .liveDot {
+    animation: none;
+  }
+}
+
 .counts {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -85,13 +131,13 @@
 
 .count {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: column-reverse;
+  justify-content: flex-end;
+  gap: 6px;
   padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
-  box-shadow: var(--shadow);
 }
 
 .count[data-alert] {
@@ -102,15 +148,21 @@
 
 .countValue {
   font-family: var(--font-geist-mono);
-  font-size: 30px;
+  font-size: 28px;
   font-weight: 600;
+  letter-spacing: -0.02em;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
 
 .countLabel {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.count[data-alert] .countLabel {
+  color: inherit;
 }
 
 .events {
@@ -120,11 +172,31 @@
 }
 
 .eventsTitle {
-  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+}
+
+.eventsCount {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
   color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.eventsEmpty {
+  padding: 16px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
 }
 
 .eventList {
@@ -140,6 +212,7 @@
 
 .event {
   display: flex;
+  align-items: center;
   gap: 12px;
   padding: 10px 14px;
   font-size: 13px;
@@ -159,15 +232,42 @@
   font-variant-numeric: tabular-nums;
 }
 
+.eventStatus {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.eventStatus[data-status="sent"],
+.eventStatus[data-status="sent_without_image"] {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.eventStatus[data-status="failed"],
+.eventStatus[data-status="invalid"],
+.eventStatus[data-status="not_configured"],
+.eventStatus[data-status="no_conversation"] {
+  background: var(--alert-soft);
+  color: var(--alert);
+}
+
+.eventStatus[data-status="off"] {
+  display: none;
+}
+
 .panel {
   display: flex;
   flex-direction: column;
   gap: 14px;
   padding: 20px;
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 14px;
   background: var(--surface);
-  box-shadow: var(--shadow);
   font-size: 14px;
   position: sticky;
   top: 84px;
@@ -190,6 +290,10 @@
   background: var(--accent);
 }
 
+.stepCount {
+  font-weight: 500;
+}
+
 .stepCount,
 .help,
 .optionText {
@@ -203,8 +307,8 @@
 }
 
 .title {
-  font-size: 19px;
-  font-weight: 650;
+  font-size: 18px;
+  font-weight: 600;
   letter-spacing: -0.01em;
   line-height: 1.25;
 }
@@ -278,8 +382,17 @@
 .toggle {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  padding: 2px 0;
   cursor: pointer;
+}
+
+.primary:focus-visible,
+.secondary:focus-visible,
+.option:focus-visible,
+.select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .slider {
@@ -319,6 +432,11 @@
   font-weight: 600;
   cursor: pointer;
   transition: filter 120ms, background 120ms;
+}
+
+.primary:active:not(:disabled),
+.secondary:active {
+  transform: translateY(1px);
 }
 
 .primary {

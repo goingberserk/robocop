@@ -1,6 +1,7 @@
 import { ApiError, Photon } from "@photon-ai/api";
 import { OTHER_CATEGORIES, STREET_CATEGORIES } from "@/lib/detection";
 import type { NotifyRequest, NotifyResponse } from "@/lib/notify";
+import { streams } from "@/lib/streams";
 
 // This route is public and its key is not, so it only ever sends one fixed kind
 // of text to one configured person, at a limited rate.
@@ -36,21 +37,56 @@ const hasValidKind = (body: Record<string, unknown>) => {
   return body.kind === "crowd" ? isSmallInteger(body.limit) : body.kind === "zone";
 };
 
-const alertText = (body: NotifyRequest, at: string) => {
+const PLURALS: Record<string, string> = {
+  person: "people",
+  bus: "buses",
+  skis: "skis",
+};
+
+const plural = (category: string) => PLURALS[category] ?? `${category}s`;
+
+const withArticle = (category: string) =>
+  `${/^[aeiou]/.test(category) ? "An" : "A"} ${category}`;
+
+const alertLines = (body: NotifyRequest): [string, string] => {
   switch (body.kind) {
     case "luggage":
-      return `robocop: ${body.category} left alone for ${body.alone} s at ${at} in the video.`;
+      return [
+        "🧳 Left luggage",
+        `${withArticle(body.category)} has been left unattended for ${body.alone} seconds.`,
+      ];
     case "crowd":
-      return `robocop: crowded, ${body.count} people in the zone (limit ${body.limit}) at ${at} in the video.`;
+      return [
+        "👥 Crowded space",
+        `${body.count} people are in your area. The limit is ${body.limit}.`,
+      ];
     case "zone":
-      return `robocop: ${body.category} entered the zone (${body.count} in zone) at ${at} in the video.`;
+      return [
+        "🚨 Trespassing",
+        body.count === 1
+          ? `${withArticle(body.category)} entered your restricted area.`
+          : `${body.count} ${plural(body.category)} are in your restricted area.`,
+      ];
   }
+};
+
+const alertText = (body: NotifyRequest) => {
+  const [title, detail] = alertLines(body);
+  const stream = streams.find((s) => s.id === body.source)!;
+  const minutes = Math.floor(body.time / 60);
+  const seconds = String(Math.floor(body.time % 60)).padStart(2, "0");
+  // A camera has no position in a recording to point at.
+  const source = stream.clipUrl
+    ? `${stream.label}, at ${minutes}:${seconds}`
+    : stream.label;
+  return `${title}\n${detail}\n\nSource: ${source}`;
 };
 
 const isValid = (body: Record<string, unknown>): body is NotifyRequest =>
   hasValidKind(body) &&
   typeof body.id === "string" &&
   /^[0-9a-f-]{36}$/.test(body.id) &&
+  streams.some((s) => s.id === body.source) &&
   typeof body.category === "string" &&
   CATEGORIES.has(body.category) &&
   typeof body.time === "number" &&
@@ -157,8 +193,6 @@ export async function POST(request: Request) {
       lastSentAt = 0;
       return reply({ status: "no_conversation" }, 409);
     }
-    const minutes = Math.floor(body.time / 60);
-    const seconds = String(Math.floor(body.time % 60)).padStart(2, "0");
     await photon.projects.sendMessage({
       path: { id: project },
       headers: { "idempotency-key": `zone-event:${body.id}` },
@@ -167,7 +201,7 @@ export async function POST(request: Request) {
         content: {
           type: "text",
           format: "plain",
-          text: alertText(body, `${minutes}:${seconds}`),
+          text: alertText(body),
         },
       },
     });

@@ -30,6 +30,7 @@ const MIN_POINTS = 3;
 const EVENT_MIN_FRAMES = 2;
 const EVENT_COOLDOWN_MS = 5000;
 const CROP_MAX_EDGE = 1024;
+const CROP_ZOOM_OUT = 1.3;
 // A left bag only alerts once, so it waits for the send limit instead of being
 // dropped by it.
 const LUGGAGE_SEND_ATTEMPTS = 4;
@@ -44,6 +45,7 @@ const BAG_COLORS: Record<BagState, string> = {
 const OWNER_COLOR = "#3b9eff";
 
 const STEPS = ["footage", "goal", "zone", "object", "start"] as const;
+const STEP_LABELS = ["Footage", "Goal", "Area", "Rule", "Start"];
 
 const GOALS = [
   {
@@ -82,15 +84,15 @@ type ZoneEvent = {
 };
 
 const IMESSAGE_LABELS: Record<NonNullable<ZoneEvent["imessage"]>, string> = {
-  sending: "Sending iMessage…",
-  sent: "iMessage with photo sent",
-  sent_without_image: "iMessage sent, no photo",
+  sending: "Sending…",
+  sent: "Sent with photo",
+  sent_without_image: "Sent, no photo",
   off: "",
-  not_configured: "iMessage not set up",
-  invalid: "iMessage failed",
-  rate_limited: "iMessage skipped (limit)",
+  not_configured: "Messages not set up",
+  invalid: "Not sent",
+  rate_limited: "Skipped (limit)",
   no_conversation: "Text the Photon line first",
-  failed: "iMessage failed",
+  failed: "Not sent",
 };
 
 const zoneBox = (zone: Point[], width: number, height: number) => ({
@@ -108,10 +110,19 @@ function cropDetection(
 ) {
   const margin =
     marginRatio * Math.max(box.xmax - box.xmin, box.ymax - box.ymin);
-  const x = Math.max(0, box.xmin - margin);
-  const y = Math.max(0, box.ymin - margin);
-  const width = Math.min(frame.width, box.xmax + margin) - x;
-  const height = Math.min(frame.height, box.ymax + margin) - y;
+  const width = Math.min(
+    frame.width,
+    (box.xmax - box.xmin + 2 * margin) * CROP_ZOOM_OUT,
+  );
+  const height = Math.min(
+    frame.height,
+    (box.ymax - box.ymin + 2 * margin) * CROP_ZOOM_OUT,
+  );
+  // Slide the crop back into the frame near an edge instead of cutting it.
+  const clamp = (start: number, size: number, max: number) =>
+    Math.min(Math.max(0, start), max - size);
+  const x = clamp((box.xmin + box.xmax - width) / 2, width, frame.width);
+  const y = clamp((box.ymin + box.ymax - height) / 2, height, frame.height);
   const scale = Math.min(3, CROP_MAX_EDGE / Math.max(width, height));
   const crop = document.createElement("canvas");
   crop.width = Math.round(width * scale);
@@ -251,6 +262,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
                 {
                   kind: "luggage",
                   id: found[i].id,
+                  source: footage!,
                   category: bag.track.label,
                   alone: Math.floor(bag.alone),
                   time: result.time,
@@ -277,8 +289,8 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
           id: crypto.randomUUID(),
           time: result.time,
           text: watchingCrowd
-            ? `Crowded: ${count} people in zone (limit ${allowed})`
-            : `Zone entered: ${counted} (${count} in zone)`,
+            ? `Crowded: ${count} people in area (limit ${allowed})`
+            : `Area entered: ${counted} (${count} in area)`,
           imessage: imessageEnabled.current ? "sending" : "off",
         };
         setEvents((prev) => [event, ...prev]);
@@ -295,6 +307,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
             : undefined;
           const details = {
             id: event.id,
+            source: footage!,
             category: counted,
             count,
             time: result.time,
@@ -318,6 +331,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
       abandonAfter,
       counted,
       allowed,
+      footage,
     ],
   );
 
@@ -404,7 +418,15 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
           onVisible={handleVisible}
         >
           {!stream && (
-            <div className={styles.placeholder}>No footage selected</div>
+            <div className={styles.placeholder}>
+              Choose footage to get started
+            </div>
+          )}
+          {detecting && (
+            <div className={styles.livePill} data-alert={alert || undefined}>
+              <span className={styles.liveDot} aria-hidden />
+              {alert ? "Alert" : "Detecting"}
+            </div>
           )}
           {live && camera.kind === "starting" && (
             <div className={styles.placeholder}>Opening camera…</div>
@@ -448,7 +470,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
                   <button
                     key={i}
                     type="button"
-                    aria-label="Close zone"
+                    aria-label="Close area"
                     className={`${styles.vertex} ${styles.vertexClose}`}
                     style={{
                       left: `${point.x * 100}%`,
@@ -477,19 +499,19 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
           <div className={styles.counts}>
             <div className={styles.count}>
               <span className={styles.countValue}>{bags.length}</span>
-              <span className={styles.countLabel}>Bags in zone now</span>
+              <span className={styles.countLabel}>Bags in area</span>
             </div>
             <div className={styles.count}>
               <span className={styles.countValue}>
                 {bagCount("unattended")}
               </span>
-              <span className={styles.countLabel}>Unattended now</span>
+              <span className={styles.countLabel}>Unattended</span>
             </div>
             <div className={styles.count} data-alert={alert || undefined}>
               <span className={styles.countValue}>
                 {bagCount("abandoned")}
               </span>
-              <span className={styles.countLabel}>Abandoned now</span>
+              <span className={styles.countLabel}>Abandoned</span>
             </div>
           </div>
         )}
@@ -502,27 +524,32 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
                 {watchingCrowd && ` / ${allowed}`}
               </span>
               <span className={styles.countLabel}>
-                {watchingCrowd ? "People in zone / limit" : `${counted} in zone now`}
+                {watchingCrowd ? "In area / limit" : "In area now"}
               </span>
             </div>
             <div className={styles.count}>
               <span className={styles.countValue}>
                 {visible?.detections.length ?? 0}
               </span>
-              <span className={styles.countLabel}>{counted} in view now</span>
+              <span className={styles.countLabel}>In view now</span>
             </div>
             <div className={styles.count}>
               <span className={styles.countValue}>{peak}</span>
-              <span className={styles.countLabel}>Most in zone at once</span>
+              <span className={styles.countLabel}>Peak in area</span>
             </div>
           </div>
         )}
 
         {detecting && eventsOn && (
           <section className={styles.events}>
-            <h3 className={styles.eventsTitle}>Events ({events.length})</h3>
+            <h3 className={styles.eventsTitle}>
+              Events
+              <span className={styles.eventsCount}>{events.length}</span>
+            </h3>
             {events.length === 0 ? (
-              <p className={styles.help}>No events yet.</p>
+              <p className={styles.eventsEmpty}>
+                Nothing yet. Events will appear here as they happen.
+              </p>
             ) : (
               <ol className={styles.eventList}>
                 {events.map((event) => (
@@ -532,7 +559,10 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
                     </span>
                     <span className={styles.eventText}>{event.text}</span>
                     {event.imessage && (
-                      <span className={styles.eventTime}>
+                      <span
+                        className={styles.eventStatus}
+                        data-status={event.imessage}
+                      >
                         {IMESSAGE_LABELS[event.imessage]}
                       </span>
                     )}
@@ -555,7 +585,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
           ))}
         </div>
         <p className={styles.stepCount}>
-          Step {stepIndex + 1} of {STEPS.length}
+          Step {stepIndex + 1} of {STEPS.length} · {STEP_LABELS[stepIndex]}
         </p>
 
         {step === "footage" && (
@@ -637,14 +667,14 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
             <h2 className={styles.title}>
               {watchingBags || watchingCrowd
                 ? "Mark the area to watch"
-                : "Mark the restricted zone"}
+                : "Mark the restricted area"}
             </h2>
             <p className={styles.help}>
               {zoneClosed
-                ? "Zone set."
+                ? "Area set. You can continue."
                 : zone.length < MIN_POINTS
                   ? `Click in the video to place corners (${zone.length} of ${MIN_POINTS}).`
-                  : "Add more corners, or close the zone."}
+                  : "Add more corners, or close the area."}
             </p>
             {!zoneClosed && zone.length >= MIN_POINTS && (
               <button
@@ -652,7 +682,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
                 className={styles.secondary}
                 onClick={closeZone}
               >
-                Close zone
+                Close area
               </button>
             )}
             {zone.length > 0 && (
@@ -671,7 +701,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
           <>
             <h2 className={styles.title}>What counts as luggage?</h2>
             <p className={styles.help}>
-              Only these are tracked inside your zone. People anywhere in view
+              Only these are tracked inside your area. People anywhere in view
               count as owners.
             </p>
             {LUGGAGE_CATEGORIES.map((c) => (
@@ -697,7 +727,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
           <>
             <h2 className={styles.title}>How many people are allowed?</h2>
             <p className={styles.help}>
-              An event fires when more people than this are in your zone.
+              An event fires when more people than this are in your area.
             </p>
             <input
               className={styles.select}
@@ -717,7 +747,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
 
         {step === "object" && !watchingBags && !watchingCrowd && (
           <>
-            <h2 className={styles.title}>What may not enter the zone?</h2>
+            <h2 className={styles.title}>What may not enter the area?</h2>
             <select
               className={styles.select}
               aria-label="Object"
@@ -749,16 +779,16 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
               {watchingBags ? (
                 <>
                   Flag any <strong>{items.join(", ")}</strong> left in your
-                  zone without its owner on {stream?.label}.
+                  area without its owner on {stream?.label}.
                 </>
               ) : watchingCrowd ? (
                 <>
                   Alert when more than <strong>{maxPeople} people</strong> are
-                  inside your zone on {stream?.label}.
+                  inside your area on {stream?.label}.
                 </>
               ) : (
                 <>
-                  Count every <strong>{category}</strong> inside your zone on{" "}
+                  Count every <strong>{category}</strong> inside your area on{" "}
                   {stream?.label}.
                 </>
               )}
@@ -795,18 +825,18 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
             <p className={styles.help}>
               {watchingBags ? (
                 <>
-                  Watching <strong>{items.join(", ")}</strong> in your zone.
+                  Watching <strong>{items.join(", ")}</strong> in your area.
                   Green is with its owner (blue), amber is alone, red is
                   abandoned.
                 </>
               ) : watchingCrowd ? (
                 <>
                   Watching for more than <strong>{maxPeople} people</strong> in
-                  your zone. Counts are below the video.
+                  your area. Counts are below the video.
                 </>
               ) : (
                 <>
-                  Watching for <strong>{category}</strong> in your zone. Counts
+                  Watching for <strong>{category}</strong> in your area. Counts
                   are below the video.
                 </>
               )}
@@ -820,7 +850,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
                   checked={onlyInZone}
                   onChange={(e) => setOnlyInZone(e.target.checked)}
                 />
-                Only show boxes in zone
+                Only show boxes in area
               </label>
             )}
             <label className={styles.toggle}>
@@ -832,7 +862,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
                   setEventsOn(e.target.checked);
                 }}
               />
-              Trigger events
+              Log events
             </label>
             {eventsOn && (
               <label className={styles.toggle}>
@@ -844,7 +874,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
                     setImessageOn(e.target.checked);
                   }}
                 />
-                Send iMessage on event
+                Send iMessage alerts
               </label>
             )}
             <button type="button" className={styles.secondary} onClick={stop}>

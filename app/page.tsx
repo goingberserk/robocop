@@ -14,7 +14,7 @@ export default function Home() {
           <p className={styles.tagline}>Help shows up sooner.</p>
           <span className={styles.status}>
             <span className={styles.statusDot} aria-hidden />
-            Runs in your browser
+            On-device detection
           </span>
         </div>
       </header>
@@ -22,7 +22,10 @@ export default function Home() {
         <Workspace streams={streams} />
       </main>
       <footer className={styles.footer}>
-        <span>Detection runs locally. No video leaves this device.</span>
+        <span>
+          Detection runs in your browser. Only alert photos leave this device,
+          sent through Photon to your phone.
+        </span>
       </footer>
     </>
   );
