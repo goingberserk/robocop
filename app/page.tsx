@@ -9,7 +9,16 @@ export default function Home() {
       <header className={styles.topbar}>
         <div className={styles.topbarInner}>
           <h1 className={styles.brand}>
-            <Logo />
+            {/* A full reload so the setup starts over from the first step;
+                a <Link> would keep the setup where it was. */}
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+            <a
+              href="/"
+              className={styles.home}
+              aria-label="robocop.ai, start over"
+            >
+              <Logo />
+            </a>
           </h1>
           <p className={styles.tagline}>Help shows up sooner.</p>
           <span className={styles.status}>
