@@ -26,21 +26,32 @@ export type Result = {
 
 export type VisibleResult = Result & { time: number };
 
+// A box to draw in place of the raw detections, in result pixels.
+export type Annotation = {
+  box: Detection["box"];
+  // Boxes without a label are drawn thinner.
+  label?: string;
+  color: string;
+};
+
 export default function Detector({
   src,
-  category,
+  categories,
   active,
   boxZone,
+  annotations,
   onStatus,
   onVisible,
   children,
 }: {
   src?: string;
-  category: string;
+  categories: string[];
   // The model only loads once detection is started.
   active: boolean;
   // When set, only boxes inside this zone are drawn. Counts are unaffected.
   boxZone: Point[] | null;
+  // When set, these are drawn instead of the detections.
+  annotations?: Annotation[];
   onStatus: (status: Status) => void;
   onVisible: (visible: VisibleResult) => void;
   children?: React.ReactNode;
@@ -59,9 +70,9 @@ export default function Detector({
   const visible = useMemo(
     () =>
       result?.detections.filter(
-        (d) => d.score >= threshold && d.label === category,
+        (d) => d.score >= threshold && categories.includes(d.label),
       ) ?? [],
-    [result, category, threshold],
+    [result, categories, threshold],
   );
 
   useEffect(() => onStatus(status), [status, onStatus]);
@@ -173,28 +184,37 @@ export default function Detector({
     const sy = size.height / result.height;
     ctx.font = "600 12px ui-monospace, monospace";
     ctx.textBaseline = "top";
-    ctx.lineWidth = 2;
-    for (const d of visible) {
-      if (boxZone && !boxInZone(d.box, boxZone, result.width, result.height)) {
-        continue;
-      }
-            const x = d.box.xmin * sx;
-      const y = d.box.ymin * sy;
-      const w = (d.box.xmax - d.box.xmin) * sx;
-      const h = (d.box.ymax - d.box.ymin) * sy;
+    const boxes: Annotation[] =
+      annotations ??
+      visible
+        .filter(
+          (d) =>
+            !boxZone || boxInZone(d.box, boxZone, result.width, result.height),
+        )
+        .map((d) => ({
+          box: d.box,
+          label: `${d.label} ${Math.round(d.score * 100)}`,
+          color: BOX_COLOR,
+        }));
+    for (const { box, label, color } of boxes) {
+      const x = box.xmin * sx;
+      const y = box.ymin * sy;
+      const w = (box.xmax - box.xmin) * sx;
+      const h = (box.ymax - box.ymin) * sy;
 
-      ctx.strokeStyle = BOX_COLOR;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = label ? 2 : 1;
       ctx.strokeRect(x, y, w, h);
+      if (!label) continue;
 
-      const text = `${d.label} ${Math.round(d.score * 100)}`;
-      const tw = ctx.measureText(text).width + 8;
+      const tw = ctx.measureText(label).width + 8;
       const ty = y >= 18 ? y - 18 : y;
-      ctx.fillStyle = BOX_COLOR;
+      ctx.fillStyle = color;
       ctx.fillRect(x - 1, ty, tw, 18);
       ctx.fillStyle = "#000";
-      ctx.fillText(text, x + 3, ty + 3);
+      ctx.fillText(label, x + 3, ty + 3);
     }
-  }, [result, visible, size, boxZone]);
+  }, [result, visible, size, boxZone, annotations]);
 
   return (
     <div className={styles.root}>

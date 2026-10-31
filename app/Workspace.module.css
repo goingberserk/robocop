@@ -249,6 +249,13 @@
   cursor: pointer;
 }
 
+.slider {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
 .bar {
   height: 8px;
   overflow: hidden;

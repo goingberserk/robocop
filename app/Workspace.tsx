@@ -2,9 +2,20 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { OTHER_CATEGORIES, STREET_CATEGORIES } from "@/lib/detection";
+import {
+  type Bag,
+  type BagState,
+  LUGGAGE_CATEGORIES,
+  LuggageWatch,
+} from "@/lib/luggage";
 import type { Stream } from "@/lib/streams";
+import { type Track, Tracker } from "@/lib/tracker";
 import { boxInZone, type Point } from "@/lib/watch";
-import Detector, { type Status, type VisibleResult } from "./Detector";
+import Detector, {
+  type Annotation,
+  type Status,
+  type VisibleResult,
+} from "./Detector";
 import styles from "./Workspace.module.css";
 
 const MIN_POINTS = 3;
@@ -12,6 +23,14 @@ const MIN_POINTS = 3;
 // stay empty this long before the same activity can raise another event.
 const EVENT_MIN_FRAMES = 2;
 const EVENT_COOLDOWN_MS = 5000;
+
+const BAG_COLORS: Record<BagState, string> = {
+  moving: "#a0a0a0",
+  attended: "#34d399",
+  unattended: "#f59e0b",
+  abandoned: "#ef4444",
+};
+const OWNER_COLOR = "#3b9eff";
 
 const STEPS = ["footage", "goal", "zone", "object", "start"] as const;
 
@@ -26,7 +45,7 @@ const GOALS = [
     id: "luggage",
     label: "Left luggage",
     description: "A bag stays behind without its owner.",
-    available: false,
+    available: true,
   },
   {
     id: "theft",
@@ -38,7 +57,7 @@ const GOALS = [
 
 const LOADING: Status = { kind: "loading", progress: 0 };
 
-type ZoneEvent = { id: string; time: number; count: number };
+type ZoneEvent = { id: string; time: number; text: string };
 
 const countInZone = (result: VisibleResult | null, zone: Point[]) =>
   result?.detections.filter((d) =>
@@ -48,6 +67,26 @@ const countInZone = (result: VisibleResult | null, zone: Point[]) =>
 const formatTime = (seconds: number) =>
   `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
 
+const bagName = ({ track }: Bag) => `${track.label} #${track.id}`;
+
+const annotate = (bags: Bag[], people: Map<number, Track["box"]>) => {
+  const annotations: Annotation[] = [];
+  for (const bag of bags) {
+    const alone =
+      bag.state === "unattended" || bag.state === "abandoned"
+        ? ` ${Math.floor(bag.alone)}s`
+        : "";
+    annotations.push({
+      box: bag.track.box,
+      label: `${bagName(bag)} · ${bag.state}${alone}`,
+      color: BAG_COLORS[bag.state],
+    });
+    const owner = bag.ownerId === null ? undefined : people.get(bag.ownerId);
+    if (owner) annotations.push({ box: owner, color: OWNER_COLOR });
+  }
+  return annotations;
+};
+
 export default function Workspace({ streams }: { streams: Stream[] }) {
   const [stepIndex, setStepIndex] = useState(0);
   const [footage, setFootage] = useState<string | null>(null);
@@ -56,6 +95,10 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
   const [zoneClosed, setZoneClosed] = useState(false);
   const [cursor, setCursor] = useState<Point | null>(null);
   const [category, setCategory] = useState("person");
+  const [items, setItems] = useState<string[]>(LUGGAGE_CATEGORIES);
+  const [abandonAfter, setAbandonAfter] = useState(5);
+  const [bags, setBags] = useState<Bag[]>([]);
+  const [annotations, setAnnotations] = useState<Annotation[]>();
   const [started, setStarted] = useState(false);
   const [status, setStatus] = useState<Status>(LOADING);
   const [visible, setVisible] = useState<VisibleResult | null>(null);
@@ -66,31 +109,70 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
   const eventsEnabled = useRef(true);
   const streak = useRef(0);
   const lastInZone = useRef(0);
+  const [tracker] = useState(() => new Tracker());
+  const [luggage] = useState(() => new LuggageWatch());
 
   const step = STEPS[stepIndex];
   const stream = streams.find((s) => s.id === footage);
+  const watchingBags = goal === "luggage";
+  const categories = useMemo(
+    () => (watchingBags ? [...items, "person"] : [category]),
+    [watchingBags, items, category],
+  );
   const drawing = step === "zone" && !zoneClosed;
   const detecting = started && status.kind === "ready";
 
   const handleVisible = useCallback(
     (result: VisibleResult) => {
-      const count = countInZone(result, zone);
       setVisible(result);
+      if (watchingBags) {
+        const tracks = tracker.update(result.detections, result.time);
+        const { bags, abandoned } = luggage.update(tracks, {
+          zone,
+          width: result.width,
+          height: result.height,
+          time: result.time,
+          abandonAfter,
+        });
+        const people = new Map(
+          tracks.filter((t) => t.label === "person").map((t) => [t.id, t.box]),
+        );
+        setBags(bags);
+        setAnnotations(annotate(bags, people));
+        if (eventsEnabled.current && abandoned.length > 0) {
+          const found = abandoned.map((bag) => ({
+            id: crypto.randomUUID(),
+            time: result.time,
+            text: `Left luggage: ${bagName(bag)} alone for ${Math.floor(bag.alone)} s`,
+          }));
+          setEvents((prev) => [...found, ...prev]);
+        }
+        return;
+      }
+
+      const count = countInZone(result, zone);
       setPeak((prev) => Math.max(prev, count));
 
       streak.current = count > 0 ? streak.current + 1 : 0;
       if (streak.current < EVENT_MIN_FRAMES) return;
       const now = Date.now();
       if (eventsEnabled.current && now - lastInZone.current > EVENT_COOLDOWN_MS) {
-        const event = { id: crypto.randomUUID(), time: result.time, count };
+        const event = {
+          id: crypto.randomUUID(),
+          time: result.time,
+          text: `Zone entered: ${category} (${count} in zone)`,
+        };
         setEvents((prev) => [event, ...prev]);
       }
       lastInZone.current = now;
     },
-    [zone],
+    [zone, watchingBags, tracker, luggage, abandonAfter, category],
   );
 
   const inZone = useMemo(() => countInZone(visible, zone), [visible, zone]);
+  const bagCount = (state: BagState) =>
+    bags.filter((bag) => bag.state === state).length;
+  const alert = watchingBags ? bagCount("abandoned") > 0 : inZone > 0;
 
   const pointFrom = (e: React.PointerEvent<HTMLDivElement>): Point => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -117,19 +199,39 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
     setEvents([]);
     streak.current = 0;
     lastInZone.current = 0;
+    tracker.reset();
+    luggage.reset();
+    setBags([]);
+    setAnnotations(undefined);
     setStarted(true);
   };
 
   const stop = () => {
     setStarted(false);
     setVisible(null);
+    setBags([]);
+    setAnnotations(undefined);
   };
 
   const canContinue =
     (step === "footage" && footage !== null) ||
     (step === "goal" && goal !== null) ||
     (step === "zone" && zoneClosed) ||
-    step === "object";
+    (step === "object" && (!watchingBags || items.length > 0));
+
+  const abandonSlider = (
+    <label className={styles.slider}>
+      Abandoned after {abandonAfter} s alone
+      <input
+        type="range"
+        min={2}
+        max={60}
+        step={1}
+        value={abandonAfter}
+        onChange={(e) => setAbandonAfter(Number(e.target.value))}
+      />
+    </label>
+  );
 
   const preview = cursor ? [...zone, cursor] : zone;
   const points = preview.map((p) => `${p.x},${p.y}`).join(" ");
@@ -141,9 +243,10 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
       <div className={styles.viewer}>
         <Detector
           src={stream?.clipUrl}
-          category={category}
+          categories={categories}
           active={started}
           boxZone={onlyInZone ? zone : null}
+          annotations={watchingBags ? annotations : undefined}
           onStatus={setStatus}
           onVisible={handleVisible}
         >
@@ -173,7 +276,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
                   points={points}
                   vectorEffect="non-scaling-stroke"
                   className={styles.zone}
-                  data-alert={(detecting && inZone > 0) || undefined}
+                  data-alert={(detecting && alert) || undefined}
                 />
               ) : (
                 <polyline
@@ -214,7 +317,28 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
           </div>
         </Detector>
 
-        {detecting && (
+        {detecting && watchingBags && (
+          <div className={styles.counts}>
+            <div className={styles.count}>
+              <span className={styles.countValue}>{bags.length}</span>
+              <span className={styles.countLabel}>Bags in zone now</span>
+            </div>
+            <div className={styles.count}>
+              <span className={styles.countValue}>
+                {bagCount("unattended")}
+              </span>
+              <span className={styles.countLabel}>Unattended now</span>
+            </div>
+            <div className={styles.count} data-alert={alert || undefined}>
+              <span className={styles.countValue}>
+                {bagCount("abandoned")}
+              </span>
+              <span className={styles.countLabel}>Abandoned now</span>
+            </div>
+          </div>
+        )}
+
+        {detecting && !watchingBags && (
           <div className={styles.counts}>
             <div className={styles.count} data-alert={inZone > 0 || undefined}>
               <span className={styles.countValue}>{inZone}</span>
@@ -245,7 +369,7 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
                     <span className={styles.eventTime}>
                       {formatTime(event.time)}
                     </span>
-                    Zone entered: {category} ({event.count} in zone)
+                    {event.text}
                   </li>
                 ))}
               </ol>
@@ -318,7 +442,11 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
 
         {step === "zone" && (
           <>
-            <h2 className={styles.title}>Mark the restricted zone</h2>
+            <h2 className={styles.title}>
+              {watchingBags
+                ? "Mark the area to watch"
+                : "Mark the restricted zone"}
+            </h2>
             <p className={styles.help}>
               {zoneClosed
                 ? "Zone set."
@@ -347,7 +475,33 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
           </>
         )}
 
-        {step === "object" && (
+        {step === "object" && watchingBags && (
+          <>
+            <h2 className={styles.title}>What counts as luggage?</h2>
+            <p className={styles.help}>
+              Only these are tracked inside your zone. People anywhere in view
+              count as owners.
+            </p>
+            {LUGGAGE_CATEGORIES.map((c) => (
+              <label key={c} className={styles.toggle}>
+                <input
+                  type="checkbox"
+                  checked={items.includes(c)}
+                  onChange={(e) =>
+                    setItems((prev) =>
+                      e.target.checked
+                        ? [...prev, c]
+                        : prev.filter((item) => item !== c),
+                    )
+                  }
+                />
+                {c}
+              </label>
+            ))}
+          </>
+        )}
+
+        {step === "object" && !watchingBags && (
           <>
             <h2 className={styles.title}>What may not enter the zone?</h2>
             <select
@@ -378,9 +532,19 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
           <>
             <h2 className={styles.title}>Ready to start</h2>
             <p className={styles.help}>
-              Count every <strong>{category}</strong> inside your zone on{" "}
-              {stream?.label}.
+              {watchingBags ? (
+                <>
+                  Flag any <strong>{items.join(", ")}</strong> left in your
+                  zone without its owner on {stream?.label}.
+                </>
+              ) : (
+                <>
+                  Count every <strong>{category}</strong> inside your zone on{" "}
+                  {stream?.label}.
+                </>
+              )}
             </p>
+            {watchingBags && abandonSlider}
             <button type="button" className={styles.primary} onClick={start}>
               Start detection
             </button>
@@ -410,17 +574,31 @@ export default function Workspace({ streams }: { streams: Stream[] }) {
           <>
             <h2 className={styles.title}>Detection active</h2>
             <p className={styles.help}>
-              Watching for <strong>{category}</strong> in your zone. Counts are
-              below the video.
+              {watchingBags ? (
+                <>
+                  Watching <strong>{items.join(", ")}</strong> in your zone.
+                  Green is with its owner (blue), amber is alone, red is
+                  abandoned.
+                </>
+              ) : (
+                <>
+                  Watching for <strong>{category}</strong> in your zone. Counts
+                  are below the video.
+                </>
+              )}
             </p>
-            <label className={styles.toggle}>
-              <input
-                type="checkbox"
-                checked={onlyInZone}
-                onChange={(e) => setOnlyInZone(e.target.checked)}
-              />
-              Only show boxes in zone
-            </label>
+            {watchingBags ? (
+              abandonSlider
+            ) : (
+              <label className={styles.toggle}>
+                <input
+                  type="checkbox"
+                  checked={onlyInZone}
+                  onChange={(e) => setOnlyInZone(e.target.checked)}
+                />
+                Only show boxes in zone
+              </label>
+            )}
             <label className={styles.toggle}>
               <input
                 type="checkbox"
